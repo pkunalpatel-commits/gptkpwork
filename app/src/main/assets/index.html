@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>NIFTY OI Profile</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1120;--panel:#111a2b;--line:#243149;--muted:#91a0b8;--text:#e8eef8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,Arial,sans-serif}
+header{padding:14px 15px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+h1{font-size:17px;margin:0}.sub{color:var(--muted);font-size:11px;margin-top:3px}.pill{border:1px solid #6a4d22;color:#ffd18a;border-radius:20px;padding:5px 8px;font-size:10px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+select,button,input{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13px}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 12px 12px}.metric{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+.metric small{display:block;color:var(--muted);font-size:10px}.metric strong{display:block;font-size:14px;margin-top:5px}
+.card{margin:0 12px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+.card h2{font-size:13px;margin:0 0 8px}.chart{height:245px;width:100%}.profileRow{display:grid;grid-template-columns:48px 1fr 38px;align-items:center;gap:7px;margin:5px 0;font-size:11px;color:var(--muted)}
+.track{height:15px;background:#1a263a;border-radius:3px;overflow:hidden}.bar{height:100%;background:#2d9c87}.bar.poc{background:#22c55e}
+.levels{display:flex;flex-wrap:wrap;gap:6px}.level{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:#c7d2e4}
+.note{font-size:11px;color:var(--muted);line-height:1.5}.attribution{font-size:10px;text-align:center;color:var(--muted);padding:4px 12px 16px}label{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}
+</style>
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<header><div><h1>NIFTY Option OI Profile</h1><div class="sub">Dhan data · Android edition</div></div><span class="pill">DEMO MODE</span></header>
+<div class="controls">
+<div><label>Underlying</label><select><option>NIFTY</option><option>BANKNIFTY</option><option>FINNIFTY</option></select></div>
+<div><label>Expiry</label><select><option>Choose expiry after live feed setup</option></select></div>
+<div><label>Option side</label><select><option>CE</option><option>PE</option></select></div>
+<div><label>Strike</label><input inputmode="numeric" placeholder="e.g. 25000"></div>
+<div><label>Candle timeframe</label><select><option>1 minute</option><option selected>5 minutes</option><option>15 minutes</option><option>30 minutes</option></select></div>
+<div><label>Profile metric</label><select><option>Total OI</option><option>Change in OI (ΔOI)</option></select></div>
+</div>
+<div class="metrics"><div class="metric"><small>Last premium</small><strong>₹160.00</strong></div><div class="metric"><small>OI-POC (demo)</small><strong>₹160</strong></div><div class="metric"><small>Feed status</small><strong style="color:#ffd18a">Not connected</strong></div></div>
+<div class="card"><h2>Option contract candlesticks</h2><div id="chart" class="chart"></div><div class="note">Demo candles only. Live Dhan feed is not configured in this initial scaffold.</div></div>
+<div class="card"><h2>Premium OI Profile (illustrative)</h2><div id="profile"></div><div class="note">Illustrative values only. Aggregate OI snapshots cannot reveal the exact premium paid by holders.</div></div>
+<div class="card"><h2>VWAP and historical levels</h2><div class="levels"><span class="level">Daily VWAP: awaiting data</span><span class="level">Weekly VWAP: awaiting data</span><span class="level">Previous day OHLC</span><span class="level">Previous week H/L</span><span class="level">Previous month H/L</span></div></div>
+<div class="card"><h2>Live feed setup</h2><p class="note">This build intentionally does not ask for or store your Dhan token. Official WebSocket authentication and packet parsing must be implemented and tested against current Dhan documentation before displaying real market values.</p></div>
+<div class="attribution">Charts powered by TradingView Lightweight Charts · Apache 2.0 · Demo data</div>
+<script>
+const profileData=[{p:180,v:12},{p:175,v:23},{p:170,v:44},{p:165,v:82},{p:160,v:100},{p:155,v:71},{p:150,v:38},{p:145,v:14},{p:140,v:8}];
+document.getElementById('profile').innerHTML=profileData.map(x=>'<div class="profileRow"><span>₹'+x.p+'</span><div class="track"><div class="bar '+(x.p===160?'poc':'')+'" style="width:'+x.v+'%"></div></div><span>'+x.v+'</span></div>').join('');
+if(window.LightweightCharts){
+ const el=document.getElementById('chart');
+ const chart=LightweightCharts.createChart(el,{layout:{background:{color:'#111a2b'},textColor:'#c7d2e4'},grid:{vertLines:{color:'#1d2a40'},horzLines:{color:'#1d2a40'}},rightPriceScale:{borderColor:'#2b3850'},timeScale:{borderColor:'#2b3850',timeVisible:true},width:el.clientWidth,height:245});
+ const candles=chart.addCandlestickSeries({upColor:'#20c997',downColor:'#ff647c',borderUpColor:'#20c997',borderDownColor:'#ff647c',wickUpColor:'#20c997',wickDownColor:'#ff647c'});
+ const now=Math.floor(Date.now()/1000),base=160,data=[];
+ for(let i=45;i>=0;i--){let t=Math.floor((now-i*300)/300)*300,c=base+Math.sin(i*.55)*7+Math.cos(i*.17)*3,o=c+Math.sin(i)*2;data.push({time:t,open:+o.toFixed(2),high:+(Math.max(o,c)+2).toFixed(2),low:+(Math.min(o,c)-2).toFixed(2),close:+c.toFixed(2)});}
+ candles.setData(data);chart.timeScale().fitContent();
+ window.addEventListener('resize',()=>chart.applyOptions({width:el.clientWidth}));
+}
+</script>
+</body></html>
