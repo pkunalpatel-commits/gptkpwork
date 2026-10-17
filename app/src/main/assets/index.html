@@ -21,29 +21,29 @@ input,select,button{width:100%;background:#0a1422;border:1px solid var(--line);c
 button{background:#1a3a5c;font-weight:600}
 button.sec{background:#152030}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.status{font-size:10px;color:var(--muted);margin-top:4px;min-height:28px}
+.status{font-size:10px;color:var(--muted);margin-top:4px;min-height:28px;word-break:break-word}
 .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px}
 .metric{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
 .metric small{display:block;color:var(--muted);font-size:9px}
-.metric b{font-size:14px}
+.metric b{font-size:13px}
 .chart-card{margin:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .chart-card h2{font-size:11px;margin:0;padding:8px 10px;border-bottom:1px solid var(--line);color:var(--muted)}
-.chartrow{display:flex;height:min(55vh,520px);min-height:360px}
-#chart{flex:1;min-width:0;height:100%}
-.profile{width:38%;max-width:180px;height:100%;border-left:1px solid var(--line);position:relative;background:#0a1422;overflow:hidden}
-.profile-head{position:absolute;top:0;left:0;right:0;z-index:2;background:rgba(10,20,34,.92);padding:4px 6px;font-size:9px;color:var(--muted);text-align:center;border-bottom:1px solid var(--line)}
-#profileCanvas{position:absolute;inset:0;width:100%;height:100%}
+.chartrow{display:flex;flex-direction:row;height:420px;width:100%}
+#chart{flex:1 1 62%;width:62%;height:420px;min-width:0}
+.profile{flex:0 0 38%;width:38%;height:420px;border-left:1px solid var(--line);position:relative;background:#0a1422;overflow:hidden}
+.profile-head{position:absolute;top:0;left:0;right:0;z-index:2;background:rgba(10,20,34,.95);padding:5px 6px;font-size:9px;color:var(--muted);text-align:center;border-bottom:1px solid var(--line)}
+#profileCanvas{display:block;width:100%;height:100%;position:absolute;top:0;left:0}
 .table-card{margin:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px}
 .table-card h2{font-size:11px;margin:0 0 6px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:11px}
-th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right}
+th,td{padding:6px;border-bottom:1px solid var(--line);text-align:right}
 th:first-child,td:first-child{text-align:left}
 th{color:var(--muted);font-weight:500}
 td.poc{color:var(--green);font-weight:700}
 .swrow{display:flex;flex-wrap:wrap;gap:6px;margin:8px;align-items:center}
 .sw{font-size:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px}
 .sw input{width:auto;margin:0 4px 0 0;padding:0}
-.note{font-size:10px;color:var(--muted);margin:0 8px 10px;line-height:1.45}
+.note{font-size:10px;color:var(--muted);margin:0 8px 12px;line-height:1.45}
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -108,11 +108,11 @@ td.poc{color:var(--green);font-weight:700}
 </div>
 
 <div class="chart-card">
-  <h2>Candles + OI generated at each premium (volume-profile style)</h2>
-  <div class="chartrow">
+  <h2>Candles + OI at each premium (volume-profile style)</h2>
+  <div class="chartrow" id="chartrow">
     <div id="chart"></div>
     <div class="profile">
-      <div class="profile-head" id="profiletitle">OI GENERATED →</div>
+      <div class="profile-head" id="profiletitle">OI BY PREMIUM</div>
       <canvas id="profileCanvas"></canvas>
     </div>
   </div>
@@ -126,18 +126,19 @@ td.poc{color:var(--green);font-weight:700}
 </div>
 
 <div class="table-card">
-  <h2>Premium-wise OI (where OI was generated)</h2>
+  <h2>Premium vs OI details</h2>
   <table>
-    <thead><tr><th>Premium</th><th>OI generated</th><th>% of total</th></tr></thead>
-    <tbody id="oiTable"><tr><td colspan="3" style="text-align:center;color:#8fa0b8">Waiting for OI…</td></tr></tbody>
+    <thead><tr><th>Premium range</th><th>OI generated</th><th>% of total</th></tr></thead>
+    <tbody id="oiTable"><tr><td colspan="3" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
-<p class="note">Right histogram aligns with chart price scale — same idea as volume profile, but for <b>OI increase at each option premium</b>. Needs live Full feed (LTP+OI) from Dhan.</p>
+<p class="note">Right panel = OI histogram aligned to premium price. Table always lists premium → OI. Historical candles + live Full feed both feed the profile.</p>
 
 <script>
 let chart, candles, dv, wv, chain = null, selected = null;
 let history = [], lastOi = null, lastLtp = null, profileSamples = [];
 let profileCanvas, profileCtx;
+const CHART_H = 420;
 
 function setStatus(s, ok) {
   document.getElementById('status').textContent = s;
@@ -184,13 +185,9 @@ window.onChainResponse = (ok, text) => {
       o.value = k; o.textContent = k;
       s.appendChild(o);
     });
-    if (!keys.length) {
-      setStatus('Chain empty. Check token / expiry.', false);
-      return;
-    }
-    // pick ATM-ish middle strike
+    if (!keys.length) { setStatus('Chain empty.', false); return; }
     s.selectedIndex = Math.floor(keys.length / 2);
-    setStatus('Chain loaded · ' + keys.length + ' strikes. Pick CE/PE and start feed.', true);
+    setStatus('Chain loaded · ' + keys.length + ' strikes.', true);
   } catch (e) { setStatus('Chain parse error: ' + e, false); }
 };
 
@@ -199,21 +196,13 @@ function startContract() {
   let strike = document.getElementById('strike').value;
   let side = document.getElementById('side').value;
   selected = chain[strike] && chain[strike][side];
-  if (!selected) {
-    // try uppercase keys
-    selected = chain[strike] && (chain[strike][side.toUpperCase()] || chain[strike][side.toLowerCase()]);
-  }
+  if (!selected) selected = chain[strike] && (chain[strike][side.toUpperCase()] || chain[strike][side.toLowerCase()]);
   let sid = selected && (selected.security_id || selected.securityId || selected.SecurityId);
-  if (!sid) {
-    setStatus('No security_id for this contract in chain response.', false);
-    console.log('selected', selected);
-    return;
-  }
+  if (!sid) { setStatus('No security_id for this contract.', false); return; }
   sid = String(sid);
   document.getElementById('contractInfo').textContent =
     sid + ' · ' + strike + ' ' + side.toUpperCase() + ' · ' + document.getElementById('expiry').value;
 
-  // seed from option-chain OI (works even when market is closed)
   let chainOi = Number(selected.oi || selected.OI || selected.open_interest || 0);
   let prevOi = Number(selected.previous_oi || selected.previousOi || selected.prev_oi || 0);
   let chainLtp = Number(selected.last_price || selected.LTP || selected.ltp || selected.previous_close_price || 0);
@@ -222,16 +211,15 @@ function startContract() {
   profileSamples = [];
   if (chainOi > 0 && lastLtp > 0) {
     let doi = prevOi > 0 ? (chainOi - prevOi) : 0;
-    // attribute day's OI change so far to current premium (best offline estimate)
-    profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi > 0 ? doi : 0, time: Date.now(), src: 'chain' });
-    if (doi < 0) profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi, time: Date.now(), src: 'chain' });
+    profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi, time: Date.now(), src: 'chain' });
     lastOi = chainOi;
     document.getElementById('oi').textContent = chainOi.toLocaleString('en-IN');
     document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
-    drawProfile();
   }
 
   document.getElementById('setupPanel').open = false;
+  // resize chart after setup collapses
+  setTimeout(() => { resizeChart(); drawProfile(); }, 80);
   DhanBridge.loadCandles(sid, document.getElementById('interval').value);
   DhanBridge.connectContract(sid);
 }
@@ -239,20 +227,17 @@ function startContract() {
 function disconnect() { DhanBridge.disconnect(); }
 
 function seedProfileFromHistory() {
-  // Historical OI profile: each candle's ΔOI attributed to that candle's close (premium)
   let histSamples = [];
   let prev = null;
   let withOi = 0;
   history.forEach(c => {
-    if (!(c.oi > 0)) return;
-    if (!(c.close > 0)) return;
+    if (!(c.oi > 0) || !(c.close > 0)) return;
     withOi++;
     let doi = prev === null ? 0 : (c.oi - prev);
     histSamples.push({ price: c.close, oi: c.oi, doi: doi, time: c.time * 1000, src: 'hist' });
     prev = c.oi;
   });
-  // Keep any live samples already present; put history first
-  let liveOnly = profileSamples.filter(s => s.src === 'live');
+  let liveOnly = profileSamples.filter(s => s.src === 'live' || s.src === 'chain');
   profileSamples = histSamples.concat(liveOnly);
   if (prev !== null) lastOi = prev;
   if (history.length && history[history.length - 1].close > 0)
@@ -279,24 +264,22 @@ window.onCandlesResponse = (ok, text) => {
       });
     }
     history.sort((a, b) => a.time - b.time);
+    resizeChart();
     candles.setData(history);
     let nOi = seedProfileFromHistory();
     recalcOverlays();
     chart.timeScale().fitContent();
+    // second pass after layout settles
+    setTimeout(() => { resizeChart(); chart.timeScale().fitContent(); drawProfile(); }, 100);
     drawProfile();
-    if (nOi > 1) {
-      setStatus('Candles ' + history.length + ' · historical OI points ' + nOi + ' · profile ready (live adds more in market hours)', true);
-    } else if (nOi === 1) {
-      setStatus('Candles ' + history.length + ' · only 1 OI value in history (need ΔOI). Live ticks will build profile in market hours.', true);
-    } else {
-      setStatus('Candles ' + history.length + ' · NO OI in candle response. Profile needs live Full feed (market hours) or chain OI.', false);
-    }
+    if (nOi > 1) setStatus('Candles ' + history.length + ' · hist OI ' + nOi + ' · profile ready', true);
+    else if (nOi === 1) setStatus('Candles ' + history.length + ' · 1 OI point. Live ticks add more.', true);
+    else setStatus('Candles ' + history.length + ' · no OI in candles. Using chain/live only.', true);
   } catch (e) { setStatus('Candle parse: ' + e, false); }
 };
 
 window.onDhanTick = t => {
   if (!selected) return;
-
   if (t.ltp !== undefined && isFinite(t.ltp)) {
     lastLtp = Number(t.ltp);
     document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
@@ -317,7 +300,6 @@ window.onDhanTick = t => {
       recalcOverlays();
     }
   }
-
   if (t.oi !== undefined && isFinite(t.oi)) {
     let oi = Number(t.oi);
     document.getElementById('oi').textContent = oi.toLocaleString('en-IN');
@@ -361,7 +343,7 @@ function vwap(mode) {
 }
 
 function recalcOverlays() {
-  if (!history.length) return;
+  if (!history.length || !dv) return;
   dv.setData(vwap('d'));
   wv.setData(vwap('w'));
   dv.applyOptions({ visible: document.getElementById('dailyOn').checked });
@@ -373,69 +355,140 @@ function buildBins() {
   let metric = document.querySelector('input[name=metric]:checked').value;
   let bins = {};
   profileSamples.forEach(s => {
-    let p = Math.floor(s.price / bucket) * bucket;
-    if (metric === 'oi') bins[p] = s.oi;
-    else if (s.doi > 0) bins[p] = (bins[p] || 0) + s.doi;
+    let p = Math.floor(Number(s.price) / bucket) * bucket;
+    if (!isFinite(p)) return;
+    if (metric === 'oi') {
+      bins[p] = Number(s.oi) || 0;
+    } else {
+      let d = Number(s.doi) || 0;
+      // include all ΔOI for table; positive highlighted in UI
+      bins[p] = (bins[p] || 0) + d;
+    }
   });
-  return { bins, bucket, metric };
+  // if metric is doi and all zero, fall back to absolute oi levels so something shows
+  let keys = Object.keys(bins).map(Number);
+  let allZero = keys.every(k => !bins[k]);
+  if (metric === 'doi' && allZero && profileSamples.length) {
+    bins = {};
+    profileSamples.forEach(s => {
+      let p = Math.floor(Number(s.price) / bucket) * bucket;
+      if (!isFinite(p)) return;
+      bins[p] = Number(s.oi) || 0;
+    });
+    return { bins, bucket, metric: 'oi', fallback: true };
+  }
+  return { bins, bucket, metric, fallback: false };
 }
 
 function drawProfile() {
-  let { bins, bucket, metric } = buildBins();
-  let keys = Object.keys(bins).map(Number).filter(k => bins[k]);
+  let { bins, bucket, metric, fallback } = buildBins();
+  let keys = Object.keys(bins).map(Number).filter(k => isFinite(k) && bins[k] !== 0);
   let tbody = document.getElementById('oiTable');
 
-  // --- table always shows data ---
   if (!keys.length) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8fa0b8">No OI profile yet. Need candles with OI or live ticks (market hours Mon–Fri)</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8fa0b8">No premium/OI samples yet</td></tr>';
     document.getElementById('poc').textContent = '—';
-    document.getElementById('profiletitle').textContent = 'WAITING OI…';
-  } else {
-    let total = keys.reduce((s, k) => s + Math.abs(bins[k]), 0) || 1;
-    let best = keys.reduce((a, b) => bins[b] > bins[a] ? b : a, keys[0]);
-    document.getElementById('poc').textContent = '₹' + best;
-    document.getElementById('profiletitle').textContent =
-      (metric === 'oi' ? 'OI LEVEL' : 'OI GENERATED') + ' @ ₹' + best;
-    keys.sort((a, b) => bins[b] - bins[a]);
-    tbody.innerHTML = keys.slice(0, 25).map(p => {
-      let n = Math.round(bins[p]);
-      let pct = (Math.abs(bins[p]) / total * 100).toFixed(1);
-      let cls = p === best ? ' class="poc"' : '';
-      return '<tr' + cls + '><td>₹' + p + '–' + (p + bucket) + '</td><td>' +
-        (n > 0 ? '+' : '') + n.toLocaleString('en-IN') + '</td><td>' + pct + '%</td></tr>';
-    }).join('');
+    document.getElementById('profiletitle').textContent = 'WAITING DATA';
+    paintCanvasEmpty();
+    return;
   }
 
-  // --- canvas histogram aligned to chart price scale ---
-  if (!chart || !profileCanvas) return;
-  let rect = profileCanvas.parentElement.getBoundingClientRect();
+  let total = keys.reduce((s, k) => s + Math.abs(bins[k]), 0) || 1;
+  let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
+  document.getElementById('poc').textContent = '₹' + best;
+  document.getElementById('profiletitle').textContent =
+    (fallback || metric === 'oi' ? 'OI LEVEL' : 'OI GENERATED') + ' @ ₹' + best;
+
+  // TABLE — always show price vs OI
+  keys.sort((a, b) => b - a); // high premium on top
+  tbody.innerHTML = keys.map(p => {
+    let n = Math.round(bins[p]);
+    let pct = (Math.abs(bins[p]) / total * 100).toFixed(1);
+    let cls = p === best ? ' class="poc"' : '';
+    let sign = (metric !== 'oi' && n > 0) ? '+' : '';
+    return '<tr' + cls + '><td>₹' + p + ' – ' + (p + bucket) + '</td><td>' +
+      sign + n.toLocaleString('en-IN') + '</td><td>' + pct + '%</td></tr>';
+  }).join('');
+
+  // CANVAS histogram — use chart scale if available, else linear map
+  paintCanvas(bins, keys, bucket, best);
+}
+
+function paintCanvasEmpty() {
+  if (!profileCanvas || !profileCtx) return;
+  let parent = profileCanvas.parentElement;
+  let W = parent.clientWidth || 120;
+  let H = parent.clientHeight || CHART_H;
   let dpr = window.devicePixelRatio || 1;
-  profileCanvas.width = Math.floor(rect.width * dpr);
-  profileCanvas.height = Math.floor(rect.height * dpr);
-  profileCanvas.style.width = rect.width + 'px';
-  profileCanvas.style.height = rect.height + 'px';
+  profileCanvas.width = Math.floor(W * dpr);
+  profileCanvas.height = Math.floor(H * dpr);
+  profileCanvas.style.width = W + 'px';
+  profileCanvas.style.height = H + 'px';
   profileCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  let W = rect.width, H = rect.height;
   profileCtx.clearRect(0, 0, W, H);
-  if (!keys.length) return;
+}
+
+function paintCanvas(bins, keys, bucket, best) {
+  if (!profileCanvas || !profileCtx) return;
+  let parent = profileCanvas.parentElement;
+  let W = parent.clientWidth || 120;
+  let H = parent.clientHeight || CHART_H;
+  let dpr = window.devicePixelRatio || 1;
+  profileCanvas.width = Math.floor(W * dpr);
+  profileCanvas.height = Math.floor(H * dpr);
+  profileCanvas.style.width = W + 'px';
+  profileCanvas.style.height = H + 'px';
+  profileCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  profileCtx.clearRect(0, 0, W, H);
 
   let max = Math.max(1, ...keys.map(k => Math.abs(bins[k])));
-  let best = keys.reduce((a, b) => bins[b] > bins[a] ? b : a, keys[0]);
+  let minP = Math.min(...keys);
+  let maxP = Math.max(...keys) + bucket;
+  // expand range with chart candles if available
+  if (history.length) {
+    let lo = Math.min(...history.map(c => c.low));
+    let hi = Math.max(...history.map(c => c.high));
+    minP = Math.min(minP, lo);
+    maxP = Math.max(maxP, hi);
+  }
+  if (maxP <= minP) maxP = minP + bucket;
+
+  function yForPrice(price) {
+    // try chart coordinate first
+    if (chart) {
+      try {
+        let y = chart.priceScale('right').priceToCoordinate(price);
+        if (y !== null && isFinite(y)) return y;
+      } catch (e) {}
+    }
+    // fallback linear: high price at top
+    return ((maxP - price) / (maxP - minP)) * (H - 24) + 18;
+  }
 
   keys.forEach(p => {
-    let yTop = chart.priceScale('right').priceToCoordinate(p + bucket);
-    let yBot = chart.priceScale('right').priceToCoordinate(p);
-    if (yTop === null || yBot === null) return;
-    let y = Math.min(yTop, yBot);
-    let h = Math.max(2, Math.abs(yBot - yTop) - 1);
-    if (y + h < 0 || y > H) return;
-    let barW = (Math.abs(bins[p]) / max) * (W - 36);
+    let y1 = yForPrice(p + bucket);
+    let y2 = yForPrice(p);
+    let y = Math.min(y1, y2);
+    let h = Math.max(3, Math.abs(y2 - y1) - 1);
+    if (y > H || y + h < 0) return;
+    let barW = (Math.abs(bins[p]) / max) * (W - 40);
+    barW = Math.max(4, barW);
     profileCtx.fillStyle = p === best ? '#1ecf9a' : (bins[p] < 0 ? '#a14b58' : '#2a7d74');
     profileCtx.fillRect(4, y, barW, h);
-    profileCtx.fillStyle = '#c5d0e0';
+    profileCtx.fillStyle = '#d0dae8';
     profileCtx.font = '9px system-ui';
-    profileCtx.fillText((bins[p] > 0 ? '+' : '') + Math.round(bins[p]).toLocaleString('en-IN'), 6 + barW, y + h * 0.75);
+    let label = '₹' + p + ' ' + (bins[p] > 0 && bins[p] !== Math.round(bins[p]) ? '' : '') +
+      ((bins[p] > 0) ? '+' : '') + Math.round(bins[p]).toLocaleString('en-IN');
+    profileCtx.fillText(label, 6 + barW, Math.min(H - 2, y + Math.max(9, h * 0.75)));
   });
+}
+
+function resizeChart() {
+  if (!chart) return;
+  let el = document.getElementById('chart');
+  let w = el.clientWidth || el.offsetWidth || 200;
+  let h = el.clientHeight || CHART_H;
+  chart.applyOptions({ width: w, height: h });
 }
 
 ['dailyOn', 'weeklyOn', 'bucket'].forEach(id => {
@@ -445,13 +498,17 @@ document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener(
 
 function initChart() {
   let el = document.getElementById('chart');
+  if (!window.LightweightCharts) {
+    setStatus('Chart library failed to load (network).', false);
+    return;
+  }
   chart = LightweightCharts.createChart(el, {
     layout: { background: { color: '#0f1826' }, textColor: '#b8c4d8', fontSize: 10 },
     grid: { vertLines: { color: '#1a2738' }, horzLines: { color: '#1a2738' } },
-    rightPriceScale: { borderColor: '#2a3a50', scaleMargins: { top: 0.05, bottom: 0.05 } },
+    rightPriceScale: { borderColor: '#2a3a50', scaleMargins: { top: 0.06, bottom: 0.06 } },
     timeScale: { borderColor: '#2a3a50', timeVisible: true },
-    width: el.clientWidth,
-    height: el.clientHeight
+    width: el.clientWidth || 240,
+    height: CHART_H
   });
   candles = chart.addCandlestickSeries({
     upColor: '#1ecf9a', downColor: '#ff6b7a',
@@ -460,17 +517,19 @@ function initChart() {
   });
   dv = makeLine('#5b9fff', 'Daily VWAP');
   wv = makeLine('#ffc857', 'Weekly VWAP');
-  chart.subscribeVisibleLogicalRangeChange(drawProfile);
-  chart.timeScale().subscribeVisibleTimeRangeChange(drawProfile);
+  chart.timeScale().subscribeVisibleTimeRangeChange(() => drawProfile());
+  chart.subscribeVisibleLogicalRangeChange(() => drawProfile());
   profileCanvas = document.getElementById('profileCanvas');
   profileCtx = profileCanvas.getContext('2d');
-  window.addEventListener('resize', () => {
-    chart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
-    drawProfile();
-  });
+  window.addEventListener('resize', () => { resizeChart(); drawProfile(); });
+  // initial size after layout
+  setTimeout(resizeChart, 50);
 }
 
-if (window.LightweightCharts) initChart();
-else setTimeout(initChart, 500);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initChart);
+} else {
+  initChart();
+}
 </script>
 </body></html>
