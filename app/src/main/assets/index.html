@@ -127,6 +127,12 @@ td.poc{color:var(--green);font-weight:700}
 
 <div class="table-card">
   <h2>Premium vs OI details</h2>
+  <div class="swrow" style="margin:0 0 8px 0">
+    <label class="sw"><input type="radio" name="sortBy" value="premium" checked>By premium</label>
+    <label class="sw"><input type="radio" name="sortBy" value="oi">By OI</label>
+    <label class="sw"><input type="radio" name="sortDir" value="desc" checked>Descending</label>
+    <label class="sw"><input type="radio" name="sortDir" value="asc">Ascending</label>
+  </div>
   <table>
     <thead><tr><th>Premium range</th><th>OI generated</th><th>% of total</th></tr></thead>
     <tbody id="oiTable"><tr><td colspan="3" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
@@ -399,8 +405,15 @@ function drawProfile() {
   document.getElementById('profiletitle').textContent =
     (fallback || metric === 'oi' ? 'OI LEVEL' : 'OI GENERATED') + ' @ ₹' + best;
 
-  // TABLE — always show price vs OI
-  keys.sort((a, b) => b - a); // high premium on top
+  // TABLE — sort by premium or OI, asc/desc
+  let sortBy = (document.querySelector('input[name=sortBy]:checked') || {}).value || 'premium';
+  let sortDir = (document.querySelector('input[name=sortDir]:checked') || {}).value || 'desc';
+  let mult = sortDir === 'asc' ? 1 : -1;
+  if (sortBy === 'oi') {
+    keys.sort((a, b) => mult * (bins[a] - bins[b]));
+  } else {
+    keys.sort((a, b) => mult * (a - b));
+  }
   tbody.innerHTML = keys.map(p => {
     let n = Math.round(bins[p]);
     let pct = (Math.abs(bins[p]) / total * 100).toFixed(1);
@@ -495,6 +508,7 @@ function resizeChart() {
   document.getElementById(id).addEventListener('change', () => { recalcOverlays(); drawProfile(); });
 });
 document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', drawProfile));
+document.querySelectorAll('input[name=sortBy], input[name=sortDir]').forEach(x => x.addEventListener('change', drawProfile));
 
 function initChart() {
   let el = document.getElementById('chart');
