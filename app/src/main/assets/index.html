@@ -213,17 +213,22 @@ function startContract() {
   document.getElementById('contractInfo').textContent =
     sid + ' · ' + strike + ' ' + side.toUpperCase() + ' · ' + document.getElementById('expiry').value;
 
-  // seed initial OI from chain if present
+  // seed from option-chain OI (works even when market is closed)
   let chainOi = Number(selected.oi || selected.OI || selected.open_interest || 0);
-  let chainLtp = Number(selected.last_price || selected.LTP || selected.ltp || 0);
+  let prevOi = Number(selected.previous_oi || selected.previousOi || selected.prev_oi || 0);
+  let chainLtp = Number(selected.last_price || selected.LTP || selected.ltp || selected.previous_close_price || 0);
   lastOi = null;
   lastLtp = chainLtp > 0 ? chainLtp : null;
   profileSamples = [];
-  if (chainOi > 0 && lastLtp) {
-    profileSamples.push({ price: lastLtp, oi: chainOi, doi: 0, time: Date.now() });
+  if (chainOi > 0 && lastLtp > 0) {
+    let doi = prevOi > 0 ? (chainOi - prevOi) : 0;
+    // attribute day's OI change so far to current premium (best offline estimate)
+    profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi > 0 ? doi : 0, time: Date.now() });
+    if (doi < 0) profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi, time: Date.now() });
     lastOi = chainOi;
     document.getElementById('oi').textContent = chainOi.toLocaleString('en-IN');
     document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
+    drawProfile();
   }
 
   document.getElementById('setupPanel').open = false;
@@ -261,7 +266,7 @@ window.onCandlesResponse = (ok, text) => {
         time: Number(d.timestamp[i]),
         open: +d.open[i], high: +d.high[i], low: +d.low[i], close: +d.close[i],
         volume: +((d.volume && d.volume[i]) || 0),
-        oi: +((d.oi && d.oi[i]) || 0)
+        oi: +((d.oi && d.oi[i]) || (d.open_interest && d.open_interest[i]) || 0)
       });
     }
     history.sort((a, b) => a.time - b.time);
@@ -367,7 +372,7 @@ function drawProfile() {
 
   // --- table always shows data ---
   if (!keys.length) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8fa0b8">No OI change yet — wait for live ticks</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8fa0b8">No OI profile yet. Need candles with OI or live ticks (market hours Mon–Fri)</td></tr>';
     document.getElementById('poc').textContent = '—';
     document.getElementById('profiletitle').textContent = 'WAITING OI…';
   } else {

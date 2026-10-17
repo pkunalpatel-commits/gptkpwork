@@ -150,11 +150,18 @@ public class MainActivity extends Activity {
                 b.put("instrument", "OPTIDX");
                 b.put("interval", interval);
                 b.put("oi", true);
-                // last ~5 trading sessions worth for profile seed
-                long to = System.currentTimeMillis() / 1000;
-                long from = to - 5L * 24 * 3600;
-                b.put("fromDate", from);
-                b.put("toDate", to);
+                // Dhan requires "yyyy-MM-dd HH:mm:ss" strings (IST), not epoch
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
+                java.util.Calendar cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
+                String toDate = sdf.format(cal.getTime());
+                cal.add(java.util.Calendar.DAY_OF_MONTH, -7);
+                cal.set(java.util.Calendar.HOUR_OF_DAY, 9);
+                cal.set(java.util.Calendar.MINUTE, 15);
+                cal.set(java.util.Calendar.SECOND, 0);
+                String fromDate = sdf.format(cal.getTime());
+                b.put("fromDate", fromDate);
+                b.put("toDate", toDate);
                 postJson("https://api.dhan.co/v2/charts/intraday", b, "window.onCandlesResponse");
             } catch (Exception e) {
                 status("Candle request error: " + e.getMessage(), false);
