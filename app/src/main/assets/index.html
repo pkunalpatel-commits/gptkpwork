@@ -3,51 +3,129 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>NIFTY OI Profile</title>
+<title>NIFTY Option OI Profile</title>
 <style>
-:root{color-scheme:dark;--bg:#0b1120;--panel:#111a2b;--line:#243149;--muted:#91a0b8;--text:#e8eef8}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,Arial,sans-serif}
-header{padding:14px 15px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
-h1{font-size:17px;margin:0}.sub{color:var(--muted);font-size:11px;margin-top:3px}.pill{border:1px solid #6a4d22;color:#ffd18a;border-radius:20px;padding:5px 8px;font-size:10px}
-.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
-select,button,input{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13px}
-.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 12px 12px}.metric{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
-.metric small{display:block;color:var(--muted);font-size:10px}.metric strong{display:block;font-size:14px;margin-top:5px}
-.card{margin:0 12px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
-.card h2{font-size:13px;margin:0 0 8px}.chart{height:245px;width:100%}.profileRow{display:grid;grid-template-columns:48px 1fr 38px;align-items:center;gap:7px;margin:5px 0;font-size:11px;color:var(--muted)}
-.track{height:15px;background:#1a263a;border-radius:3px;overflow:hidden}.bar{height:100%;background:#2d9c87}.bar.poc{background:#22c55e}
-.levels{display:flex;flex-wrap:wrap;gap:6px}.level{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:#c7d2e4}
-.note{font-size:11px;color:var(--muted);line-height:1.5}.attribution{font-size:10px;text-align:center;color:var(--muted);padding:4px 12px 16px}label{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}
+:root{color-scheme:dark;--bg:#09111f;--panel:#111b2b;--line:#26364f;--muted:#91a0b8;--text:#e8eef8;--green:#28c99a;--red:#ff6a80;--blue:#65a5ff;--gold:#ffc56b;--purple:#c49aff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px system-ui,Arial,sans-serif}
+header{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+h1{font-size:16px;margin:0}.sub{color:var(--muted);font-size:10px;margin-top:3px}.pill{border:1px solid #6a4d22;color:var(--gold);border-radius:20px;padding:5px 7px;font-size:9px;white-space:nowrap}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px}
+select,button,input{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:9px;font-size:12px}
+label{display:block;color:var(--muted);font-size:10px;margin-bottom:4px}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:0 10px 10px}.metric{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px}.metric small{display:block;color:var(--muted);font-size:9px}.metric strong{display:block;font-size:13px;margin-top:4px}
+.card{margin:0 10px 10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px}.card h2{font-size:12px;margin:0 0 8px}
+.chartrow{display:flex;align-items:stretch;width:100%;height:320px;gap:0}.chartbox{width:69%;min-width:0;height:320px}.profilebox{width:31%;height:320px;position:relative;border-left:1px solid var(--line);overflow:hidden;background:#0d1727}
+#profileTitle{font-size:9px;text-align:center;color:var(--muted);padding:4px 0;height:22px}
+#profileRows{position:absolute;top:22px;bottom:0;left:0;right:0}
+.pRow{position:absolute;left:3px;right:3px;height:12px;display:flex;align-items:center;gap:2px}
+.pBar{height:9px;background:#247e76;border-radius:2px 0 0 2px;min-width:1px;opacity:.95}
+.pBar.poc{background:#27d49b}.pVal{font-size:8px;color:#b9c8db;white-space:nowrap;overflow:hidden}
+.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:10px;color:var(--muted);padding:5px 0 1px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px}
+.switches{display:flex;flex-wrap:wrap;gap:6px}.switch{display:flex;align-items:center;gap:5px;background:#0d1727;border:1px solid var(--line);border-radius:6px;padding:6px 7px;font-size:10px;color:#d5deed}
+.switch input{width:auto;margin:0;accent-color:#65a5ff}
+.levels{display:flex;flex-wrap:wrap;gap:5px}.level{font-size:10px;border:1px solid var(--line);border-radius:5px;padding:5px 6px;color:#c7d2e4}
+.note{font-size:10px;color:var(--muted);line-height:1.5}.buttonrow{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+button.primary{background:#1b3b63;border-color:#315f91}.attribution{font-size:9px;text-align:center;color:var(--muted);padding:3px 10px 14px}
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
-<header><div><h1>NIFTY Option OI Profile</h1><div class="sub">Dhan data · Android edition</div></div><span class="pill">DEMO MODE</span></header>
+<header><div><h1>NIFTY Option OI Profile</h1><div class="sub">Candles · VWAP overlays · Premium OI profile</div></div><span class="pill">DEMO DATA</span></header>
 <div class="controls">
-<div><label>Underlying</label><select><option>NIFTY</option><option>BANKNIFTY</option><option>FINNIFTY</option></select></div>
-<div><label>Expiry</label><select><option>Choose expiry after live feed setup</option></select></div>
-<div><label>Option side</label><select><option>CE</option><option>PE</option></select></div>
-<div><label>Strike</label><input inputmode="numeric" placeholder="e.g. 25000"></div>
-<div><label>Candle timeframe</label><select><option>1 minute</option><option selected>5 minutes</option><option>15 minutes</option><option>30 minutes</option></select></div>
-<div><label>Profile metric</label><select><option>Total OI</option><option>Change in OI (ΔOI)</option></select></div>
+<div><label>Underlying</label><select id="underlying"><option>NIFTY</option><option>BANKNIFTY</option><option>FINNIFTY</option></select></div>
+<div><label>Expiry</label><select id="expiry"><option>Not connected</option></select></div>
+<div><label>Option side</label><select id="side"><option>CE</option><option>PE</option></select></div>
+<div><label>Strike</label><input id="strike" inputmode="numeric" placeholder="Select after Dhan connection"></div>
+<div><label>Candle timeframe</label><select id="timeframe"><option>1 minute</option><option selected>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>60 minutes</option></select></div>
+<div><label>Profile bucket</label><select id="bucket"><option value="2">₹2 premium steps</option><option value="5">₹5 premium steps</option></select></div>
 </div>
-<div class="metrics"><div class="metric"><small>Last premium</small><strong>₹160.00</strong></div><div class="metric"><small>OI-POC (demo)</small><strong>₹160</strong></div><div class="metric"><small>Feed status</small><strong style="color:#ffd18a">Not connected</strong></div></div>
-<div class="card"><h2>Option contract candlesticks</h2><div id="chart" class="chart"></div><div class="note">Demo candles only. Live Dhan feed is not configured in this initial scaffold.</div></div>
-<div class="card"><h2>Premium OI Profile (illustrative)</h2><div id="profile"></div><div class="note">Illustrative values only. Aggregate OI snapshots cannot reveal the exact premium paid by holders.</div></div>
-<div class="card"><h2>VWAP and historical levels</h2><div class="levels"><span class="level">Daily VWAP: awaiting data</span><span class="level">Weekly VWAP: awaiting data</span><span class="level">Previous day OHLC</span><span class="level">Previous week H/L</span><span class="level">Previous month H/L</span></div></div>
-<div class="card"><h2>Live feed setup</h2><p class="note">This build intentionally does not ask for or store your Dhan token. Official WebSocket authentication and packet parsing must be implemented and tested against current Dhan documentation before displaying real market values.</p></div>
-<div class="attribution">Charts powered by TradingView Lightweight Charts · Apache 2.0 · Demo data</div>
+<div class="metrics">
+<div class="metric"><small>Last premium</small><strong id="ltp">₹160.00*</strong></div>
+<div class="metric"><small>OI-POC</small><strong id="poc">₹160*</strong></div>
+<div class="metric"><small>Data status</small><strong id="status" style="color:var(--gold)">Demo only</strong></div>
+</div>
+<div class="card">
+<h2>Candlestick chart + horizontal Premium OI profile</h2>
+<div class="chartrow"><div id="chart" class="chartbox"></div><div class="profilebox"><div id="profileTitle">OI PROFILE</div><div id="profileRows"></div></div></div>
+<div class="legend">
+<span><i class="dot" style="background:#65a5ff"></i>Daily VWAP</span>
+<span><i class="dot" style="background:#ffc56b"></i>Weekly VWAP</span>
+<span><i class="dot" style="background:#c49aff"></i>Monthly VWAP</span>
+<span><i class="dot" style="background:#27d49b"></i>OI-POC</span>
+</div>
+<div class="note">Profile rows are positioned using the same price-to-coordinate mapping as the candle chart. Demo rows are illustrative only.</div>
+</div>
+<div class="card"><h2>Chart overlays</h2>
+<div class="switches">
+<label class="switch"><input id="showDaily" type="checkbox" checked> Daily VWAP</label>
+<label class="switch"><input id="showWeekly" type="checkbox" checked> Weekly VWAP</label>
+<label class="switch"><input id="showMonthly" type="checkbox" checked> Monthly VWAP</label>
+<label class="switch"><input id="showPD" type="checkbox" checked> Previous day OHLC</label>
+<label class="switch"><input id="showPW" type="checkbox" checked> Previous week H/L</label>
+<label class="switch"><input id="showPM" type="checkbox" checked> Previous month H/L</label>
+</div>
+<div class="note" style="margin-top:7px">VWAP lines and historical levels are drawn directly on the candlestick chart. In live mode, calculations must use Dhan candle/volume data and exchange-session boundaries.</div>
+</div>
+<div class="card"><h2>OI profile metric</h2>
+<div class="switches">
+<label class="switch"><input type="radio" name="metric" value="oi" checked> Total OI snapshots</label>
+<label class="switch"><input type="radio" name="metric" value="doi"> Change in OI (ΔOI)</label>
+</div>
+<div class="note" style="margin-top:7px">Total OI and ΔOI will be grouped by the option premium observed at each timestamp. This is a premium-time association, not the exact entry-price/cost-basis distribution of current holders.</div>
+</div>
+<div class="card"><h2>Dhan API connection — not configured</h2>
+<div class="note">This starter has no live credentials or data adapter. To connect live data, implement the official Dhan v2 WebSocket authentication and binary packet parser, instrument master lookup, option expiry/chain REST calls, historical candles, and token-safe storage. Do not paste a token into source code.</div>
+<div class="buttonrow"><button class="primary" onclick="alert('Setup guide: open README.md in the repository for official Dhan v2 endpoints and feed protocol. Live adapter is not implemented in this demo.')">Connection setup guide</button><button onclick="alert('Live connection is not yet implemented. No token is requested or stored by this demo.')">Test connection</button></div>
+</div>
+<div class="attribution">TradingView Lightweight Charts · Apache 2.0 · Demo values are not live market data</div>
 <script>
-const profileData=[{p:180,v:12},{p:175,v:23},{p:170,v:44},{p:165,v:82},{p:160,v:100},{p:155,v:71},{p:150,v:38},{p:145,v:14},{p:140,v:8}];
-document.getElementById('profile').innerHTML=profileData.map(x=>'<div class="profileRow"><span>₹'+x.p+'</span><div class="track"><div class="bar '+(x.p===160?'poc':'')+'" style="width:'+x.v+'%"></div></div><span>'+x.v+'</span></div>').join('');
-if(window.LightweightCharts){
+let chart,candleSeries,dailySeries,weeklySeries,monthlySeries,levelSeries=[];
+const sampleProfile=[{p:180,v:12},{p:175,v:23},{p:170,v:44},{p:165,v:82},{p:160,v:100},{p:155,v:71},{p:150,v:38},{p:145,v:14},{p:140,v:8}];
+function makeLine(color,title){return chart.addLineSeries({color,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title});}
+function setLineVisible(s,visible){if(s)s.applyOptions({visible});}
+function createChart(){
  const el=document.getElementById('chart');
- const chart=LightweightCharts.createChart(el,{layout:{background:{color:'#111a2b'},textColor:'#c7d2e4'},grid:{vertLines:{color:'#1d2a40'},horzLines:{color:'#1d2a40'}},rightPriceScale:{borderColor:'#2b3850'},timeScale:{borderColor:'#2b3850',timeVisible:true},width:el.clientWidth,height:245});
- const candles=chart.addCandlestickSeries({upColor:'#20c997',downColor:'#ff647c',borderUpColor:'#20c997',borderDownColor:'#ff647c',wickUpColor:'#20c997',wickDownColor:'#ff647c'});
+ chart=LightweightCharts.createChart(el,{layout:{background:{color:'#111b2b'},textColor:'#c7d2e4',fontSize:10},grid:{vertLines:{color:'#1c2b41'},horzLines:{color:'#1c2b41'}},rightPriceScale:{borderColor:'#2b3850',scaleMargins:{top:.06,bottom:.06}},timeScale:{borderColor:'#2b3850',timeVisible:true,secondsVisible:false},width:el.clientWidth,height:320,handleScroll:true,handleScale:true});
+ candleSeries=chart.addCandlestickSeries({upColor:'#28c99a',downColor:'#ff6a80',borderUpColor:'#28c99a',borderDownColor:'#ff6a80',wickUpColor:'#28c99a',wickDownColor:'#ff6a80'});
+ dailySeries=makeLine('#65a5ff','Daily VWAP');weeklySeries=makeLine('#ffc56b','Weekly VWAP');monthlySeries=makeLine('#c49aff','Monthly VWAP');
  const now=Math.floor(Date.now()/1000),base=160,data=[];
- for(let i=45;i>=0;i--){let t=Math.floor((now-i*300)/300)*300,c=base+Math.sin(i*.55)*7+Math.cos(i*.17)*3,o=c+Math.sin(i)*2;data.push({time:t,open:+o.toFixed(2),high:+(Math.max(o,c)+2).toFixed(2),low:+(Math.min(o,c)-2).toFixed(2),close:+c.toFixed(2)});}
- candles.setData(data);chart.timeScale().fitContent();
- window.addEventListener('resize',()=>chart.applyOptions({width:el.clientWidth}));
+ for(let i=80;i>=0;i--){const t=Math.floor((now-i*300)/300)*300;const c=base+Math.sin(i*.22)*8+Math.cos(i*.11)*3;const o=c+Math.sin(i*.67)*2;data.push({time:t,open:+o.toFixed(2),high:+(Math.max(o,c)+1.8).toFixed(2),low:+(Math.min(o,c)-1.8).toFixed(2),close:+c.toFixed(2),volume:100+(i*37)%600});}
+ candleSeries.setData(data);
+ const vwap=(arr,mode)=>{let pv=0,vol=0,dayKey=null,weekKey=null,monthKey=null,out=[];for(const d of arr){const dt=new Date(d.time*1000);const key=mode==='daily'?dt.toISOString().slice(0,10):mode==='weekly'?dt.getUTCFullYear()+'-W'+Math.floor((Number(dt.toISOString().slice(8,10))+6)/7):dt.toISOString().slice(0,7);if(key!== (mode==='daily'?dayKey:mode==='weekly'?weekKey:monthKey)){pv=0;vol=0;if(mode==='daily')dayKey=key;else if(mode==='weekly')weekKey=key;else monthKey=key;}const typical=(d.high+d.low+d.close)/3;pv+=typical*d.volume;vol+=d.volume;out.push({time:d.time,value:pv/Math.max(vol,1)});}return out;};
+ dailySeries.setData(vwap(data,'daily'));weeklySeries.setData(vwap(data,'weekly'));monthlySeries.setData(vwap(data,'monthly'));
+ const pd=data[data.length-25]||data[0],pw=data[data.length-50]||data[0],pm=data[0];
+ const addLevel=(price,color,title)=>{const s=chart.addLineSeries({color,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false,title});s.setData([{time:data[0].time,value:price},{time:data[data.length-1].time,value:price}]);levelSeries.push(s);};
+ addLevel(pd.open,'#e7a7a7','Prev day O');addLevel(pd.high,'#ff6a80','Prev day H');addLevel(pd.low,'#ff6a80','Prev day L');addLevel(pd.close,'#e7a7a7','Prev day C');
+ addLevel(pw.high,'#4ed5b2','Prev week H');addLevel(pw.low,'#4ed5b2','Prev week L');addLevel(pm.high,'#b4a0ff','Prev month H');addLevel(pm.low,'#b4a0ff','Prev month L');
+ chart.timeScale().fitContent();
+ chart.subscribeVisibleLogicalRangeChange(()=>drawProfile());
+ drawProfile();
+ document.getElementById('ltp').textContent='₹'+data[data.length-1].close.toFixed(2)+'*';
 }
+function drawProfile(){
+ if(!chart||!candleSeries)return;
+ const rows=document.getElementById('profileRows');rows.innerHTML='';
+ const h=rows.clientHeight||290;const bucket=Number(document.getElementById('bucket').value)||2;
+ const maxV=Math.max(...sampleProfile.map(x=>x.v));
+ sampleProfile.forEach(x=>{
+  const y=candleSeries.priceToCoordinate(x.p);
+  if(y===null||y<0||y>320)return;
+  const row=document.createElement('div');row.className='pRow';row.style.top=Math.max(0,Math.min(h-12,y-22-6))+'px';
+  const bar=document.createElement('div');bar.className='pBar'+(x.p===160?' poc':'');bar.style.width=(Math.max(2,(x.v/maxV)*62))+'%';
+  const val=document.createElement('div');val.className='pVal';val.textContent=x.v;
+  row.appendChild(bar);row.appendChild(val);rows.appendChild(row);
+ });
+ document.getElementById('poc').textContent='₹160*';
+}
+function refreshToggles(){
+ setLineVisible(dailySeries,document.getElementById('showDaily').checked);
+ setLineVisible(weeklySeries,document.getElementById('showWeekly').checked);
+ setLineVisible(monthlySeries,document.getElementById('showMonthly').checked);
+ levelSeries.forEach((s,i)=>{let show=i<4?document.getElementById('showPD').checked:i<6?document.getElementById('showPW').checked:document.getElementById('showPM').checked;s.applyOptions({visible:show});});
+ drawProfile();
+}
+['showDaily','showWeekly','showMonthly','showPD','showPW','showPM','bucket'].forEach(id=>document.getElementById(id).addEventListener('change',refreshToggles));
+document.querySelectorAll('input[name="metric"]').forEach(x=>x.addEventListener('change',()=>{document.getElementById('profileTitle').textContent=x.value==='oi'?'TOTAL OI*':'ΔOI*';drawProfile();}));
+if(window.LightweightCharts){createChart();window.addEventListener('resize',()=>{const el=document.getElementById('chart');chart.applyOptions({width:el.clientWidth});drawProfile();});}
 </script>
 </body></html>
