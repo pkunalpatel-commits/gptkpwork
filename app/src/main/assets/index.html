@@ -223,8 +223,8 @@ function startContract() {
   if (chainOi > 0 && lastLtp > 0) {
     let doi = prevOi > 0 ? (chainOi - prevOi) : 0;
     // attribute day's OI change so far to current premium (best offline estimate)
-    profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi > 0 ? doi : 0, time: Date.now() });
-    if (doi < 0) profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi, time: Date.now() });
+    profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi > 0 ? doi : 0, time: Date.now(), src: 'chain' });
+    if (doi < 0) profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi, time: Date.now(), src: 'chain' });
     lastOi = chainOi;
     document.getElementById('oi').textContent = chainOi.toLocaleString('en-IN');
     document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
@@ -239,16 +239,25 @@ function startContract() {
 function disconnect() { DhanBridge.disconnect(); }
 
 function seedProfileFromHistory() {
+  // Historical OI profile: each candle's ΔOI attributed to that candle's close (premium)
+  let histSamples = [];
   let prev = null;
+  let withOi = 0;
   history.forEach(c => {
-    if (!(c.oi > 0) || !(c.close > 0)) return;
+    if (!(c.oi > 0)) return;
+    if (!(c.close > 0)) return;
+    withOi++;
     let doi = prev === null ? 0 : (c.oi - prev);
-    profileSamples.push({ price: c.close, oi: c.oi, doi: doi, time: c.time * 1000 });
+    histSamples.push({ price: c.close, oi: c.oi, doi: doi, time: c.time * 1000, src: 'hist' });
     prev = c.oi;
   });
+  // Keep any live samples already present; put history first
+  let liveOnly = profileSamples.filter(s => s.src === 'live');
+  profileSamples = histSamples.concat(liveOnly);
   if (prev !== null) lastOi = prev;
   if (history.length && history[history.length - 1].close > 0)
     lastLtp = history[history.length - 1].close;
+  return withOi;
 }
 
 window.onCandlesResponse = (ok, text) => {
@@ -271,11 +280,17 @@ window.onCandlesResponse = (ok, text) => {
     }
     history.sort((a, b) => a.time - b.time);
     candles.setData(history);
-    seedProfileFromHistory();
+    let nOi = seedProfileFromHistory();
     recalcOverlays();
     chart.timeScale().fitContent();
     drawProfile();
-    setStatus('Candles ' + history.length + ' · waiting live OI ticks…', true);
+    if (nOi > 1) {
+      setStatus('Candles ' + history.length + ' · historical OI points ' + nOi + ' · profile ready (live adds more in market hours)', true);
+    } else if (nOi === 1) {
+      setStatus('Candles ' + history.length + ' · only 1 OI value in history (need ΔOI). Live ticks will build profile in market hours.', true);
+    } else {
+      setStatus('Candles ' + history.length + ' · NO OI in candle response. Profile needs live Full feed (market hours) or chain OI.', false);
+    }
   } catch (e) { setStatus('Candle parse: ' + e, false); }
 };
 
@@ -309,7 +324,7 @@ window.onDhanTick = t => {
     let price = (t.ltp !== undefined && isFinite(t.ltp)) ? Number(t.ltp) : lastLtp;
     if (price && price > 0) {
       let doi = lastOi === null ? 0 : (oi - lastOi);
-      profileSamples.push({ price: price, oi: oi, doi: doi, time: Date.now() });
+      profileSamples.push({ price: price, oi: oi, doi: doi, time: Date.now(), src: 'live' });
       if (profileSamples.length > 20000) profileSamples.shift();
       if (history.length) history[history.length - 1].oi = oi;
     }
