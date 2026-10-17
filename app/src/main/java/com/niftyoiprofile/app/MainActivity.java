@@ -17,6 +17,7 @@ import java.nio.ByteOrder;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.*;
+import okio.ByteString;
 
 public class MainActivity extends Activity {
     private WebView webView;
