@@ -41,6 +41,9 @@ table{width:100%;border-collapse:collapse;font-size:11px}
 th,td{padding:6px;border-bottom:1px solid var(--line);text-align:right}
 th:first-child,td:first-child{text-align:left}
 th{color:var(--muted);font-weight:500}
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+th.sortable:active{color:var(--text)}
+th.sortable .arrow{color:var(--green);margin-left:2px;font-size:10px}
 td.poc{color:var(--green);font-weight:700}
 td.oi-up{color:#1ecf9a}
 tr.oi-up td:nth-child(2){color:#1ecf9a}
@@ -144,15 +147,13 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 
 <div class="table-card" id="tableCard">
   <h2>Premium vs OI details</h2>
-  <div class="swrow" style="margin:0 0 8px 0">
-    <label class="sw"><input type="radio" name="sortBy" value="premium" checked>By premium</label>
-    <label class="sw"><input type="radio" name="sortBy" value="oi">By OI</label>
-    <label class="sw"><input type="radio" name="sortBy" value="time">By time</label>
-    <label class="sw"><input type="radio" name="sortDir" value="desc" checked>Descending</label>
-    <label class="sw"><input type="radio" name="sortDir" value="asc">Ascending</label>
-  </div>
   <table>
-    <thead><tr><th>Premium range</th><th>OI generated</th><th>% of total</th><th>Last time</th></tr></thead>
+    <thead><tr>
+      <th class="sortable" data-sort="premium" onclick="onSortHeader('premium')">Premium range<span class="arrow" id="arr-premium"></span></th>
+      <th class="sortable" data-sort="oi" onclick="onSortHeader('oi')">OI generated<span class="arrow" id="arr-oi"></span></th>
+      <th>% of total</th>
+      <th class="sortable" data-sort="time" onclick="onSortHeader('time')">Last time<span class="arrow" id="arr-time"></span></th>
+    </tr></thead>
     <tbody id="oiTable"><tr><td colspan="4" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
@@ -453,6 +454,28 @@ function vwap(mode) {
   return out;
 }
 
+let tableSortBy = 'premium';
+let tableSortDir = 'desc'; // desc | asc
+
+function onSortHeader(col) {
+  if (tableSortBy === col) {
+    tableSortDir = tableSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    tableSortBy = col;
+    tableSortDir = 'desc';
+  }
+  updateSortArrows();
+  drawProfile();
+}
+
+function updateSortArrows() {
+  ['premium', 'oi', 'time'].forEach(c => {
+    let el = document.getElementById('arr-' + c);
+    if (!el) return;
+    el.textContent = (c === tableSortBy) ? (tableSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  });
+}
+
 function formatIstTime(ms) {
   if (!ms || !isFinite(ms)) return '—';
   // history samples store time as ms; candle times were time*1000
@@ -567,13 +590,14 @@ function drawProfile() {
   let modeLabel = metric === 'oi' ? 'OI LEVEL' : metric === 'doi_up' ? 'OI UP' : metric === 'doi_down' ? 'OI DOWN' : 'ΔOI ±';
   document.getElementById('profiletitle').textContent = modeLabel + ' · POC ₹' + best;
 
-  let sortBy = (document.querySelector('input[name=sortBy]:checked') || {}).value || 'premium';
-  let sortDir = (document.querySelector('input[name=sortDir]:checked') || {}).value || 'desc';
+  let sortBy = tableSortBy || 'premium';
+  let sortDir = tableSortDir || 'desc';
   let mult = sortDir === 'asc' ? 1 : -1;
   let sorted = keys.slice();
   if (sortBy === 'oi') sorted.sort((a, b) => mult * (bins[a] - bins[b]));
   else if (sortBy === 'time') sorted.sort((a, b) => mult * ((lastTime[a] || 0) - (lastTime[b] || 0)));
   else sorted.sort((a, b) => mult * (a - b));
+  updateSortArrows();
 
   tbody.innerHTML = sorted.map(p => {
     let n = Math.round(bins[p]);
@@ -678,7 +702,6 @@ function onOverlayToggle() {
   document.getElementById(id).addEventListener('change', onOverlayToggle);
 });
 document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', onOverlayToggle));
-document.querySelectorAll('input[name=sortBy], input[name=sortDir]').forEach(x => x.addEventListener('change', drawProfile));
 
 function initChart() {
   let el = document.getElementById('chart');
