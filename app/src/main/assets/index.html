@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>NIFTY OI Profile</title>
 <style>
-:root{color-scheme:dark;--bg:#070e18;--panel:#0f1826;--line:#243247;--muted:#8fa0b8;--text:#e8eef8;--green:#1ecf9a;--red:#ff6b7a;--blue:#5b9fff;--gold:#ffc857}
+:root{color-scheme:dark;--bg:#070e18;--panel:#0f1826;--line:#243247;--muted:#8fa0b8;--text:#e8eef8;--green:#1ecf9a;--red:#ff6b7a;--blue:#5b9fff;--gold:#ffc857;--purple:#c7a1ff}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:12px/1.4 system-ui,Arial}
 header{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20}
@@ -27,13 +27,15 @@ button.sec{background:#152030}
 .metric small{display:block;color:var(--muted);font-size:9px}
 .metric b{font-size:13px}
 .chart-card{margin:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.chart-card h2{font-size:11px;margin:0;padding:8px 10px;border-bottom:1px solid var(--line);color:var(--muted)}
+.chart-card h2{font-size:11px;margin:0;padding:8px 10px;border-bottom:1px solid var(--line);color:var(--muted);display:flex;justify-content:space-between;align-items:center}
 .chartrow{display:flex;flex-direction:row;height:420px;width:100%}
-#chart{flex:1 1 62%;width:62%;height:420px;min-width:0}
-.profile{flex:0 0 38%;width:38%;height:420px;border-left:1px solid var(--line);position:relative;background:#0a1422;overflow:hidden}
+#chart{flex:1 1 auto;width:100%;height:420px;min-width:0}
+.profile{flex:0 0 34%;width:34%;height:420px;border-left:1px solid var(--line);position:relative;background:#0a1422;overflow:hidden}
+.profile.hidden{display:none}
 .profile-head{position:absolute;top:0;left:0;right:0;z-index:2;background:rgba(10,20,34,.95);padding:5px 6px;font-size:9px;color:var(--muted);text-align:center;border-bottom:1px solid var(--line)}
 #profileCanvas{display:block;width:100%;height:100%;position:absolute;top:0;left:0}
 .table-card{margin:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px}
+.table-card.hidden{display:none}
 .table-card h2{font-size:11px;margin:0 0 6px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:11px}
 th,td{padding:6px;border-bottom:1px solid var(--line);text-align:right}
@@ -44,6 +46,7 @@ td.poc{color:var(--green);font-weight:700}
 .sw{font-size:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px}
 .sw input{width:auto;margin:0 4px 0 0;padding:0}
 .note{font-size:10px;color:var(--muted);margin:0 8px 12px;line-height:1.45}
+.toggle-btn{font-size:10px;padding:4px 8px;margin:0;width:auto;background:#152030}
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -108,11 +111,14 @@ td.poc{color:var(--green);font-weight:700}
 </div>
 
 <div class="chart-card">
-  <h2>Candles + OI at each premium (volume-profile style)</h2>
+  <h2>
+    <span>Candles · POC / IB / Prev OHLC</span>
+    <button type="button" class="toggle-btn" id="btnToggleProfile" onclick="toggleOiProfile()">Hide OI profile</button>
+  </h2>
   <div class="chartrow" id="chartrow">
     <div id="chart"></div>
-    <div class="profile">
-      <div class="profile-head" id="profiletitle">OI BY PREMIUM</div>
+    <div class="profile" id="profilePane">
+      <div class="profile-head" id="profiletitle">OI KEY LEVELS</div>
       <canvas id="profileCanvas"></canvas>
     </div>
   </div>
@@ -121,11 +127,18 @@ td.poc{color:var(--green);font-weight:700}
 <div class="swrow">
   <label class="sw"><input id="dailyOn" type="checkbox" checked>Daily VWAP</label>
   <label class="sw"><input id="weeklyOn" type="checkbox" checked>Weekly VWAP</label>
+  <label class="sw"><input id="pdOn" type="checkbox" checked>Prev day OHLC</label>
+  <label class="sw"><input id="ibOn" type="checkbox" checked>IB 1st hour</label>
+  <label class="sw"><input id="pocOn" type="checkbox" checked>POC line</label>
+  <label class="sw"><input id="oiZoneOn" type="checkbox" checked>High-OI zone</label>
+</div>
+<div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated</label>
   <label class="sw"><input type="radio" name="metric" value="oi">OI level</label>
+  <label class="sw"><input id="showTable" type="checkbox" checked>Show OI table</label>
 </div>
 
-<div class="table-card">
+<div class="table-card" id="tableCard">
   <h2>Premium vs OI details</h2>
   <div class="swrow" style="margin:0 0 8px 0">
     <label class="sw"><input type="radio" name="sortBy" value="premium" checked>By premium</label>
@@ -134,16 +147,18 @@ td.poc{color:var(--green);font-weight:700}
     <label class="sw"><input type="radio" name="sortDir" value="asc">Ascending</label>
   </div>
   <table>
-    <thead><tr><th>Premium range</th><th>OI generated</th><th>% of total</th></tr></thead>
+    <thead><tr><th>Premium range</th><th>OI</th><th>% of total</th></tr></thead>
     <tbody id="oiTable"><tr><td colspan="3" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
-<p class="note">Right panel = OI histogram aligned to premium price. Table always lists premium → OI. Historical candles + live Full feed both feed the profile.</p>
+<p class="note">Chart shows POC, high-OI zone, previous day OHLC, and Initial Balance (first 60 min of session). Full OI table is optional. Hide right OI profile with the button.</p>
 
 <script>
 let chart, candles, dv, wv, chain = null, selected = null;
 let history = [], lastOi = null, lastLtp = null, profileSamples = [];
 let profileCanvas, profileCtx;
+let levelSeries = []; // prev OHLC, IB, POC, zone
+let showProfilePane = true;
 const CHART_H = 420;
 
 function setStatus(s, ok) {
@@ -153,6 +168,20 @@ function setStatus(s, ok) {
   p.className = 'pill' + (ok ? ' ok' : '');
 }
 window.onDhanStatus = o => setStatus(o.message, o.ok);
+
+function toggleOiProfile() {
+  showProfilePane = !showProfilePane;
+  let pane = document.getElementById('profilePane');
+  let btn = document.getElementById('btnToggleProfile');
+  if (showProfilePane) {
+    pane.classList.remove('hidden');
+    btn.textContent = 'Hide OI profile';
+  } else {
+    pane.classList.add('hidden');
+    btn.textContent = 'Show OI profile';
+  }
+  setTimeout(() => { resizeChart(); drawProfile(); }, 50);
+}
 
 function connectDhan() {
   let cid = document.getElementById('cid').value.trim();
@@ -224,7 +253,6 @@ function startContract() {
   }
 
   document.getElementById('setupPanel').open = false;
-  // resize chart after setup collapses
   setTimeout(() => { resizeChart(); drawProfile(); }, 80);
   DhanBridge.loadCandles(sid, document.getElementById('interval').value);
   DhanBridge.connectContract(sid);
@@ -275,12 +303,10 @@ window.onCandlesResponse = (ok, text) => {
     let nOi = seedProfileFromHistory();
     recalcOverlays();
     chart.timeScale().fitContent();
-    // second pass after layout settles
     setTimeout(() => { resizeChart(); chart.timeScale().fitContent(); drawProfile(); }, 100);
     drawProfile();
-    if (nOi > 1) setStatus('Candles ' + history.length + ' · hist OI ' + nOi + ' · profile ready', true);
-    else if (nOi === 1) setStatus('Candles ' + history.length + ' · 1 OI point. Live ticks add more.', true);
-    else setStatus('Candles ' + history.length + ' · no OI in candles. Using chain/live only.', true);
+    if (nOi > 1) setStatus('Candles ' + history.length + ' · hist OI ' + nOi + ' · levels ready', true);
+    else setStatus('Candles ' + history.length + ' · levels from available data', true);
   } catch (e) { setStatus('Candle parse: ' + e, false); }
 };
 
@@ -321,24 +347,98 @@ window.onDhanTick = t => {
   }
 };
 
-function makeLine(color, title) {
+function makeLine(color, title, style) {
   return chart.addLineSeries({
-    color, lineWidth: 1, priceLineVisible: false,
-    lastValueVisible: false, crosshairMarkerVisible: false, title
+    color, lineWidth: 1, lineStyle: style || 0,
+    priceLineVisible: false, lastValueVisible: true,
+    crosshairMarkerVisible: false, title: title || ''
   });
+}
+
+function clearLevels() {
+  levelSeries.forEach(s => { try { chart.removeSeries(s); } catch (e) {} });
+  levelSeries = [];
+}
+
+function addLevel(price, color, title, group, style) {
+  if (!isFinite(price) || !history.length) return;
+  let s = makeLine(color, title, style || 2);
+  s.setData(history.map(c => ({ time: c.time, value: price })));
+  s.__group = group;
+  levelSeries.push(s);
+}
+
+function istParts(ts) {
+  // ts epoch seconds → IST calendar parts
+  let d = new Date(ts * 1000);
+  let fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  let parts = {};
+  fmt.formatToParts(d).forEach(p => { if (p.type !== 'literal') parts[p.type] = p.value; });
+  return {
+    day: parts.year + '-' + parts.month + '-' + parts.day,
+    hour: Number(parts.hour),
+    minute: Number(parts.minute)
+  };
+}
+
+function computePrevDayOHLC() {
+  // Group by IST day; previous complete day OHLC
+  let byDay = {};
+  history.forEach(c => {
+    let day = istParts(c.time).day;
+    if (!byDay[day]) byDay[day] = { o: c.open, h: c.high, l: c.low, c: c.close };
+    else {
+      byDay[day].h = Math.max(byDay[day].h, c.high);
+      byDay[day].l = Math.min(byDay[day].l, c.low);
+      byDay[day].c = c.close;
+    }
+  });
+  let days = Object.keys(byDay).sort();
+  if (days.length < 2) return null;
+  return byDay[days[days.length - 2]];
+}
+
+function computeInitialBalance() {
+  // First 60 minutes of the latest IST session (09:15–10:15)
+  if (!history.length) return null;
+  let lastDay = istParts(history[history.length - 1].time).day;
+  let ibBars = history.filter(c => {
+    let p = istParts(c.time);
+    if (p.day !== lastDay) return false;
+    let mins = p.hour * 60 + p.minute;
+    // 09:15 = 555, 10:15 = 615
+    return mins >= 555 && mins < 615;
+  });
+  if (!ibBars.length) {
+    // fallback: first 12 bars of last day if interval is 5m, etc.
+    let dayBars = history.filter(c => istParts(c.time).day === lastDay);
+    if (!dayBars.length) return null;
+    let intervalMin = Number(document.getElementById('interval').value) || 5;
+    let n = Math.max(1, Math.ceil(60 / intervalMin));
+    ibBars = dayBars.slice(0, n);
+  }
+  if (!ibBars.length) return null;
+  return {
+    high: Math.max(...ibBars.map(b => b.high)),
+    low: Math.min(...ibBars.map(b => b.low))
+  };
 }
 
 function vwap(mode) {
   let pv = 0, vol = 0, keyPrev = '', out = [];
   history.forEach(c => {
-    let dt = new Date(c.time * 1000), key;
-    if (mode === 'd') key = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    else {
-      let day = dt.getUTCDay();
+    let p = istParts(c.time);
+    let key = mode === 'd' ? p.day : (() => {
+      let d = new Date(c.time * 1000);
+      let day = d.getUTCDay();
       let monday = new Date(c.time * 1000);
       monday.setUTCDate(monday.getUTCDate() - (day === 0 ? 6 : day - 1));
-      key = monday.toISOString().slice(0, 10);
-    }
+      return monday.toISOString().slice(0, 10);
+    })();
     if (key !== keyPrev) { pv = 0; vol = 0; keyPrev = key; }
     let typical = (c.high + c.low + c.close) / 3;
     let v = Number(c.volume) || 0;
@@ -348,14 +448,6 @@ function vwap(mode) {
   return out;
 }
 
-function recalcOverlays() {
-  if (!history.length || !dv) return;
-  dv.setData(vwap('d'));
-  wv.setData(vwap('w'));
-  dv.applyOptions({ visible: document.getElementById('dailyOn').checked });
-  wv.applyOptions({ visible: document.getElementById('weeklyOn').checked });
-}
-
 function buildBins() {
   let bucket = Number(document.getElementById('bucket').value) || 5;
   let metric = document.querySelector('input[name=metric]:checked').value;
@@ -363,17 +455,11 @@ function buildBins() {
   profileSamples.forEach(s => {
     let p = Math.floor(Number(s.price) / bucket) * bucket;
     if (!isFinite(p)) return;
-    if (metric === 'oi') {
-      bins[p] = Number(s.oi) || 0;
-    } else {
-      let d = Number(s.doi) || 0;
-      // include all ΔOI for table; positive highlighted in UI
-      bins[p] = (bins[p] || 0) + d;
-    }
+    if (metric === 'oi') bins[p] = Number(s.oi) || 0;
+    else bins[p] = (bins[p] || 0) + (Number(s.doi) || 0);
   });
-  // if metric is doi and all zero, fall back to absolute oi levels so something shows
   let keys = Object.keys(bins).map(Number);
-  let allZero = keys.every(k => !bins[k]);
+  let allZero = !keys.length || keys.every(k => !bins[k]);
   if (metric === 'doi' && allZero && profileSamples.length) {
     bins = {};
     profileSamples.forEach(s => {
@@ -386,10 +472,61 @@ function buildBins() {
   return { bins, bucket, metric, fallback: false };
 }
 
+function recalcOverlays() {
+  if (!history.length || !dv) return;
+  dv.setData(vwap('d'));
+  wv.setData(vwap('w'));
+  dv.applyOptions({ visible: document.getElementById('dailyOn').checked });
+  wv.applyOptions({ visible: document.getElementById('weeklyOn').checked });
+
+  clearLevels();
+
+  // Previous day OHLC
+  if (document.getElementById('pdOn').checked) {
+    let pd = computePrevDayOHLC();
+    if (pd) {
+      addLevel(pd.o, '#8899aa', 'PD Open', 'pd', 2);
+      addLevel(pd.h, '#68a6ff', 'PD High', 'pd', 2);
+      addLevel(pd.l, '#68a6ff', 'PD Low', 'pd', 2);
+      addLevel(pd.c, '#a0aec0', 'PD Close', 'pd', 2);
+    }
+  }
+
+  // Initial Balance — first 60 min high/low
+  if (document.getElementById('ibOn').checked) {
+    let ib = computeInitialBalance();
+    if (ib) {
+      addLevel(ib.high, '#ffc857', 'IB High', 'ib', 0);
+      addLevel(ib.low, '#ffc857', 'IB Low', 'ib', 0);
+    }
+  }
+
+  // Option 4: POC + high-OI zone only on chart
+  let { bins, bucket } = buildBins();
+  let keys = Object.keys(bins).map(Number).filter(k => bins[k]);
+  if (keys.length) {
+    let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
+    if (document.getElementById('pocOn').checked) {
+      addLevel(best + bucket / 2, '#1ecf9a', 'OI POC', 'poc', 0);
+    }
+    if (document.getElementById('oiZoneOn').checked) {
+      // top 3 buckets by |OI| → high / low of zone
+      keys.sort((a, b) => Math.abs(bins[b]) - Math.abs(bins[a]));
+      let top = keys.slice(0, Math.min(3, keys.length));
+      let zHi = Math.max(...top) + bucket;
+      let zLo = Math.min(...top);
+      addLevel(zHi, '#2a7d74', 'OI Zone H', 'zone', 3);
+      addLevel(zLo, '#2a7d74', 'OI Zone L', 'zone', 3);
+    }
+  }
+}
+
 function drawProfile() {
   let { bins, bucket, metric, fallback } = buildBins();
   let keys = Object.keys(bins).map(Number).filter(k => isFinite(k) && bins[k] !== 0);
   let tbody = document.getElementById('oiTable');
+  let showTable = document.getElementById('showTable').checked;
+  document.getElementById('tableCard').classList.toggle('hidden', !showTable);
 
   if (!keys.length) {
     tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8fa0b8">No premium/OI samples yet</td></tr>';
@@ -403,18 +540,16 @@ function drawProfile() {
   let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
   document.getElementById('poc').textContent = '₹' + best;
   document.getElementById('profiletitle').textContent =
-    (fallback || metric === 'oi' ? 'OI LEVEL' : 'OI GENERATED') + ' @ ₹' + best;
+    (fallback || metric === 'oi' ? 'OI LEVEL' : 'OI GEN') + ' · POC ₹' + best;
 
-  // TABLE — sort by premium or OI, asc/desc
   let sortBy = (document.querySelector('input[name=sortBy]:checked') || {}).value || 'premium';
   let sortDir = (document.querySelector('input[name=sortDir]:checked') || {}).value || 'desc';
   let mult = sortDir === 'asc' ? 1 : -1;
-  if (sortBy === 'oi') {
-    keys.sort((a, b) => mult * (bins[a] - bins[b]));
-  } else {
-    keys.sort((a, b) => mult * (a - b));
-  }
-  tbody.innerHTML = keys.map(p => {
+  let sorted = keys.slice();
+  if (sortBy === 'oi') sorted.sort((a, b) => mult * (bins[a] - bins[b]));
+  else sorted.sort((a, b) => mult * (a - b));
+
+  tbody.innerHTML = sorted.map(p => {
     let n = Math.round(bins[p]);
     let pct = (Math.abs(bins[p]) / total * 100).toFixed(1);
     let cls = p === best ? ' class="poc"' : '';
@@ -423,15 +558,15 @@ function drawProfile() {
       sign + n.toLocaleString('en-IN') + '</td><td>' + pct + '%</td></tr>';
   }).join('');
 
-  // CANVAS histogram — use chart scale if available, else linear map
-  paintCanvas(bins, keys, bucket, best);
+  // Option 4 side panel: only top key levels as short bars (not full histogram clutter)
+  paintKeyLevels(bins, keys, bucket, best);
 }
 
 function paintCanvasEmpty() {
   if (!profileCanvas || !profileCtx) return;
   let parent = profileCanvas.parentElement;
-  let W = parent.clientWidth || 120;
-  let H = parent.clientHeight || CHART_H;
+  if (!parent || parent.classList.contains('hidden')) return;
+  let W = parent.clientWidth || 100, H = parent.clientHeight || CHART_H;
   let dpr = window.devicePixelRatio || 1;
   profileCanvas.width = Math.floor(W * dpr);
   profileCanvas.height = Math.floor(H * dpr);
@@ -441,11 +576,11 @@ function paintCanvasEmpty() {
   profileCtx.clearRect(0, 0, W, H);
 }
 
-function paintCanvas(bins, keys, bucket, best) {
+function paintKeyLevels(bins, keys, bucket, best) {
   if (!profileCanvas || !profileCtx) return;
   let parent = profileCanvas.parentElement;
-  let W = parent.clientWidth || 120;
-  let H = parent.clientHeight || CHART_H;
+  if (!parent || parent.classList.contains('hidden')) return;
+  let W = parent.clientWidth || 100, H = parent.clientHeight || CHART_H;
   let dpr = window.devicePixelRatio || 1;
   profileCanvas.width = Math.floor(W * dpr);
   profileCanvas.height = Math.floor(H * dpr);
@@ -454,45 +589,39 @@ function paintCanvas(bins, keys, bucket, best) {
   profileCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   profileCtx.clearRect(0, 0, W, H);
 
-  let max = Math.max(1, ...keys.map(k => Math.abs(bins[k])));
+  // only top 8 by |OI| for clean view
+  let top = keys.slice().sort((a, b) => Math.abs(bins[b]) - Math.abs(bins[a])).slice(0, 8);
+  let max = Math.max(1, ...top.map(k => Math.abs(bins[k])));
   let minP = Math.min(...keys);
   let maxP = Math.max(...keys) + bucket;
-  // expand range with chart candles if available
   if (history.length) {
-    let lo = Math.min(...history.map(c => c.low));
-    let hi = Math.max(...history.map(c => c.high));
-    minP = Math.min(minP, lo);
-    maxP = Math.max(maxP, hi);
+    minP = Math.min(minP, ...history.map(c => c.low));
+    maxP = Math.max(maxP, ...history.map(c => c.high));
   }
   if (maxP <= minP) maxP = minP + bucket;
 
   function yForPrice(price) {
-    // try chart coordinate first
     if (chart) {
       try {
         let y = chart.priceScale('right').priceToCoordinate(price);
         if (y !== null && isFinite(y)) return y;
       } catch (e) {}
     }
-    // fallback linear: high price at top
     return ((maxP - price) / (maxP - minP)) * (H - 24) + 18;
   }
 
-  keys.forEach(p => {
-    let y1 = yForPrice(p + bucket);
-    let y2 = yForPrice(p);
+  top.forEach(p => {
+    let y1 = yForPrice(p + bucket), y2 = yForPrice(p);
     let y = Math.min(y1, y2);
-    let h = Math.max(3, Math.abs(y2 - y1) - 1);
+    let h = Math.max(4, Math.abs(y2 - y1) - 1);
     if (y > H || y + h < 0) return;
-    let barW = (Math.abs(bins[p]) / max) * (W - 40);
-    barW = Math.max(4, barW);
+    let barW = Math.max(6, (Math.abs(bins[p]) / max) * (W - 36));
     profileCtx.fillStyle = p === best ? '#1ecf9a' : (bins[p] < 0 ? '#a14b58' : '#2a7d74');
     profileCtx.fillRect(4, y, barW, h);
     profileCtx.fillStyle = '#d0dae8';
     profileCtx.font = '9px system-ui';
-    let label = '₹' + p + ' ' + (bins[p] > 0 && bins[p] !== Math.round(bins[p]) ? '' : '') +
-      ((bins[p] > 0) ? '+' : '') + Math.round(bins[p]).toLocaleString('en-IN');
-    profileCtx.fillText(label, 6 + barW, Math.min(H - 2, y + Math.max(9, h * 0.75)));
+    profileCtx.fillText('₹' + p + ' ' + ((bins[p] > 0) ? '+' : '') + Math.round(bins[p]).toLocaleString('en-IN'),
+      6 + barW, Math.min(H - 2, y + Math.max(10, h * 0.75)));
   });
 }
 
@@ -504,10 +633,15 @@ function resizeChart() {
   chart.applyOptions({ width: w, height: h });
 }
 
-['dailyOn', 'weeklyOn', 'bucket'].forEach(id => {
-  document.getElementById(id).addEventListener('change', () => { recalcOverlays(); drawProfile(); });
+function onOverlayToggle() {
+  recalcOverlays();
+  drawProfile();
+}
+
+['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'oiZoneOn', 'bucket', 'showTable'].forEach(id => {
+  document.getElementById(id).addEventListener('change', onOverlayToggle);
 });
-document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', drawProfile));
+document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', onOverlayToggle));
 document.querySelectorAll('input[name=sortBy], input[name=sortDir]').forEach(x => x.addEventListener('change', drawProfile));
 
 function initChart() {
@@ -529,14 +663,13 @@ function initChart() {
     borderUpColor: '#1ecf9a', borderDownColor: '#ff6b7a',
     wickUpColor: '#1ecf9a', wickDownColor: '#ff6b7a'
   });
-  dv = makeLine('#5b9fff', 'Daily VWAP');
-  wv = makeLine('#ffc857', 'Weekly VWAP');
+  dv = makeLine('#5b9fff', 'Daily VWAP', 0);
+  wv = makeLine('#ffc857', 'Weekly VWAP', 0);
   chart.timeScale().subscribeVisibleTimeRangeChange(() => drawProfile());
   chart.subscribeVisibleLogicalRangeChange(() => drawProfile());
   profileCanvas = document.getElementById('profileCanvas');
   profileCtx = profileCanvas.getContext('2d');
   window.addEventListener('resize', () => { resizeChart(); drawProfile(); });
-  // initial size after layout
   setTimeout(resizeChart, 50);
 }
 
