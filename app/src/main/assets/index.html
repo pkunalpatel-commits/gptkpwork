@@ -42,6 +42,10 @@ th,td{padding:6px;border-bottom:1px solid var(--line);text-align:right}
 th:first-child,td:first-child{text-align:left}
 th{color:var(--muted);font-weight:500}
 td.poc{color:var(--green);font-weight:700}
+td.oi-up{color:#1ecf9a}
+tr.oi-up td:nth-child(2){color:#1ecf9a}
+tr.oi-down td:nth-child(2){color:#ff6b7a}
+tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 .swrow{display:flex;flex-wrap:wrap;gap:6px;margin:8px;align-items:center}
 .sw{font-size:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px}
 .sw input{width:auto;margin:0 4px 0 0;padding:0}
@@ -133,7 +137,9 @@ td.poc{color:var(--green);font-weight:700}
   <label class="sw"><input id="oiZoneOn" type="checkbox" checked>High-OI zone</label>
 </div>
 <div class="swrow">
-  <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated</label>
+  <label class="sw"><input type="radio" name="metric" value="doi" checked>ΔOI up &amp; down</label>
+  <label class="sw"><input type="radio" name="metric" value="doi_up">OI increase only</label>
+  <label class="sw"><input type="radio" name="metric" value="doi_down">OI decrease only</label>
   <label class="sw"><input type="radio" name="metric" value="oi">OI level</label>
   <label class="sw"><input id="showTable" type="checkbox" checked>Show OI table</label>
 </div>
@@ -148,7 +154,7 @@ td.poc{color:var(--green);font-weight:700}
     <label class="sw"><input type="radio" name="sortDir" value="asc">Ascending</label>
   </div>
   <table>
-    <thead><tr><th>Premium range</th><th>OI</th><th>% of total</th><th>Last time</th></tr></thead>
+    <thead><tr><th>Premium range</th><th>OI Δ</th><th>% of total</th><th>Last time</th></tr></thead>
     <tbody id="oiTable"><tr><td colspan="4" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
@@ -472,25 +478,22 @@ function buildBins() {
   profileSamples.forEach(s => {
     let p = Math.floor(Number(s.price) / bucket) * bucket;
     if (!isFinite(p)) return;
-    if (metric === 'oi') bins[p] = Number(s.oi) || 0;
-    else bins[p] = (bins[p] || 0) + (Number(s.doi) || 0);
+    let doi = Number(s.doi) || 0;
+    let oi = Number(s.oi) || 0;
+    if (metric === 'oi') {
+      bins[p] = oi; // latest absolute OI at premium
+    } else if (metric === 'doi_up') {
+      if (doi > 0) bins[p] = (bins[p] || 0) + doi; // increase only
+    } else if (metric === 'doi_down') {
+      if (doi < 0) bins[p] = (bins[p] || 0) + doi; // decrease only (negative)
+    } else {
+      // doi — keep BOTH increase and decrease (never remove)
+      bins[p] = (bins[p] || 0) + doi;
+    }
     let t = Number(s.time) || 0;
     if (t && (!lastTime[p] || t > lastTime[p])) lastTime[p] = t;
   });
-  let keys = Object.keys(bins).map(Number);
-  let allZero = !keys.length || keys.every(k => !bins[k]);
-  if (metric === 'doi' && allZero && profileSamples.length) {
-    bins = {};
-    lastTime = {};
-    profileSamples.forEach(s => {
-      let p = Math.floor(Number(s.price) / bucket) * bucket;
-      if (!isFinite(p)) return;
-      bins[p] = Number(s.oi) || 0;
-      let t = Number(s.time) || 0;
-      if (t && (!lastTime[p] || t > lastTime[p])) lastTime[p] = t;
-    });
-    return { bins, lastTime, bucket, metric: 'oi', fallback: true };
-  }
+  // do not auto-fallback away from ΔOI; zeros mean no change at that premium
   return { bins, lastTime, bucket, metric, fallback: false };
 }
 
@@ -563,8 +566,8 @@ function drawProfile() {
   let total = keys.reduce((s, k) => s + Math.abs(bins[k]), 0) || 1;
   let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
   document.getElementById('poc').textContent = '₹' + best;
-  document.getElementById('profiletitle').textContent =
-    (fallback || metric === 'oi' ? 'OI LEVEL' : 'OI GEN') + ' · POC ₹' + best;
+  let modeLabel = metric === 'oi' ? 'OI LEVEL' : metric === 'doi_up' ? 'OI UP' : metric === 'doi_down' ? 'OI DOWN' : 'ΔOI ±';
+  document.getElementById('profiletitle').textContent = modeLabel + ' · POC ₹' + best;
 
   let sortBy = (document.querySelector('input[name=sortBy]:checked') || {}).value || 'premium';
   let sortDir = (document.querySelector('input[name=sortDir]:checked') || {}).value || 'desc';
@@ -577,8 +580,15 @@ function drawProfile() {
   tbody.innerHTML = sorted.map(p => {
     let n = Math.round(bins[p]);
     let pct = (Math.abs(bins[p]) / total * 100).toFixed(1);
-    let cls = p === best ? ' class="poc"' : '';
-    let sign = (metric !== 'oi' && n > 0) ? '+' : '';
+    let isPoc = p === best;
+    let isDown = n < 0;
+    let cls = isPoc ? ' class="poc"' : (isDown ? ' class="oi-down"' : (n > 0 ? ' class="oi-up"' : ''));
+    // always show sign for Δ modes so increase AND decrease stay visible
+    let sign = '';
+    if (metric !== 'oi') {
+      if (n > 0) sign = '+';
+      else if (n < 0) sign = ''; // number already has minus
+    }
     let when = formatIstTime(lastTime[p]);
     return '<tr' + cls + '><td>₹' + p + ' – ' + (p + bucket) + '</td><td>' +
       sign + n.toLocaleString('en-IN') + '</td><td>' + pct + '%</td>' +
