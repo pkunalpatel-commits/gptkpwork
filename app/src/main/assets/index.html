@@ -2,53 +2,482 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>NIFTY OI Profile</title>
 <style>
 :root{color-scheme:dark;--bg:#08111e;--panel:#111b2b;--line:#293951;--muted:#98a7bd;--text:#eaf0fa;--green:#22c99a;--red:#ff6b80;--blue:#68a6ff;--gold:#ffca72;--purple:#c7a1ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px system-ui,Arial}header{padding:12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center}h1{font-size:16px;margin:0}.sub,.note{color:var(--muted);font-size:10px;line-height:1.5}.pill{font-size:9px;border:1px solid #6a4d22;color:var(--gold);padding:5px 7px;border-radius:20px}
-.card{margin:9px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px}.card h2{font-size:12px;margin:0 0 8px}label{display:block;font-size:10px;color:var(--muted);margin-bottom:4px}input,select,button{width:100%;background:#0b1626;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:9px;font-size:12px;margin-bottom:7px}button{background:#19395f}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.chartrow{display:flex;height:310px}.chart{width:69%;height:310px;min-width:0}.profile{width:31%;height:310px;border-left:1px solid var(--line);position:relative;overflow:hidden}.profiletitle{text-align:center;color:var(--muted);font-size:9px;padding:4px}.prow{position:absolute;left:2px;right:2px;height:12px;display:flex;align-items:center;gap:2px}.bar{height:9px;background:#267e75;border-radius:2px}.bar.poc{background:#22c99a}.pv{font-size:8px;color:#ccd7e8}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.metric{background:#0b1626;padding:8px;border-radius:6px}.metric small{display:block;color:var(--muted);font-size:9px}.metric b{font-size:13px}.switches{display:flex;flex-wrap:wrap;gap:5px}.sw{font-size:10px;background:#0b1626;border:1px solid var(--line);border-radius:5px;padding:5px}.sw input{width:auto;margin:0 3px 0 0}.note{margin-top:5px}.levels{display:flex;flex-wrap:wrap;gap:5px}.level{font-size:9px;border:1px solid var(--line);padding:5px;border-radius:5px}
-</style><script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script></head>
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px system-ui,Arial}
+header{padding:12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center}
+h1{font-size:16px;margin:0}.sub,.note{color:var(--muted);font-size:10px;line-height:1.5}
+.pill{font-size:9px;border:1px solid #6a4d22;color:var(--gold);padding:5px 7px;border-radius:20px}
+.card{margin:9px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px}
+.card h2{font-size:12px;margin:0 0 8px}
+label{display:block;font-size:10px;color:var(--muted);margin-bottom:4px}
+input,select,button{width:100%;background:#0b1626;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:9px;font-size:12px;margin-bottom:7px}
+button{background:#19395f}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.chartrow{display:flex;height:480px}
+.chart{width:68%;height:480px;min-width:0}
+.profile{width:32%;height:480px;border-left:1px solid var(--line);position:relative;overflow:hidden;background:#0b1626}
+.profiletitle{text-align:center;color:var(--muted);font-size:9px;padding:6px 4px;border-bottom:1px solid var(--line)}
+.prow{position:absolute;left:2px;right:2px;height:14px;display:flex;align-items:center;gap:3px}
+.bar{height:10px;background:#2a8f85;border-radius:2px;min-width:2px}
+.bar.poc{background:#22c99a;box-shadow:0 0 6px rgba(34,201,154,.5)}
+.bar.neg{background:#a14b58}
+.pv{font-size:8px;color:#ccd7e8;white-space:nowrap}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.metric{background:#0b1626;padding:8px;border-radius:6px}
+.metric small{display:block;color:var(--muted);font-size:9px}
+.metric b{font-size:13px}
+.switches{display:flex;flex-wrap:wrap;gap:5px}
+.sw{font-size:10px;background:#0b1626;border:1px solid var(--line);border-radius:5px;padding:5px}
+.sw input{width:auto;margin:0 3px 0 0}
+.note{margin-top:5px}
+a{color:var(--blue)}
+</style>
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+</head>
 <body>
-<header><div><h1>NIFTY Option OI Profile</h1><div class="sub">Dhan v2 live data · Android</div></div><span class="pill" id="pill">NOT CONNECTED</span></header>
-<div class="card"><h2>1. Dhan connection</h2><label>Dhan Client ID</label><input id="cid" autocomplete="off" placeholder="Enter Client ID"><label>Dhan Access Token</label><input id="token" type="password" autocomplete="off" placeholder="Paste current access token"><button onclick="connectDhan()">Connect and load expiries</button><div class="note">Credentials are passed to the native app in memory only and are not saved to disk by this build. Never put them in GitHub/source files.</div><div id="status" class="note">Disconnected. No market data shown yet.</div></div>
-<div class="card"><h2>2. Select live option contract</h2><label>Expiry</label><select id="expiry"><option value="">Connect to load expiry dates</option></select><button onclick="loadChain()">Load option chain</button><div class="grid"><div><label>Strike</label><select id="strike"><option value="">Load chain first</option></select></div><div><label>Side</label><select id="side"><option value="ce">CE</option><option value="pe">PE</option></select></div></div><div class="grid"><div><label>Chart interval</label><select id="interval"><option value="1">1 minute</option><option value="5" selected>5 minutes</option><option value="15">15 minutes</option><option value="25">25 minutes</option><option value="60">60 minutes</option></select></div><div><label>Premium bucket</label><select id="bucket"><option value="2">₹2</option><option value="5">₹5</option><option value="10">₹10</option></select></div></div><button onclick="startContract()">Load candles + start live feed</button><button onclick="disconnect()">Disconnect live feed</button><div id="contractInfo" class="note"></div></div>
-<div class="card"><div class="metrics"><div class="metric"><small>Live premium</small><b id="ltp">—</b></div><div class="metric"><small>Live OI</small><b id="oi">—</b></div><div class="metric"><small>OI-POC</small><b id="poc">—</b></div></div></div>
-<div class="card"><h2>Live candlestick + premium OI profile</h2><div class="chartrow"><div id="chart" class="chart"></div><div class="profile"><div class="profiletitle" id="profiletitle">OI BY PREMIUM</div><div id="profileRows"></div></div></div><div class="note">Profile groups real timestamped OI snapshots by the premium observed at that time. It is not a true holder cost-basis profile.</div></div>
-<div class="card"><h2>Chart overlays</h2><div class="switches">
-<label class="sw"><input id="dailyOn" type="checkbox" checked>Daily VWAP</label><label class="sw"><input id="weeklyOn" type="checkbox" checked>Weekly VWAP</label><label class="sw"><input id="monthlyOn" type="checkbox" checked>Monthly VWAP</label><label class="sw"><input id="pdOn" type="checkbox" checked>Prev day OHLC</label><label class="sw"><input id="pwOn" type="checkbox" checked>Prev week H/L</label><label class="sw"><input id="pmOn" type="checkbox" checked>Prev month H/L</label>
-<label class="sw"><input type="radio" name="metric" value="oi" checked>OI</label><label class="sw"><input type="radio" name="metric" value="doi">ΔOI</label></div><div class="note">VWAP overlays are calculated from loaded candle volume. Levels are estimated from the candles returned by the requested historical range; fetch a sufficiently long range to calculate previous week/month correctly.</div></div>
-<div class="card"><h2>Feed and data notes</h2><div class="note">This build calls Dhan v2 expiry-list, option-chain and intraday candle endpoints, and subscribes to the selected contract through the Dhan v2 WebSocket quote feed. If authentication, contract mapping, or packet parsing fails, the status will show the error. Verify live values against Dhan's own platform before relying on them.</div><div class="note">Dhan docs: <a href="https://dhanhq.co/docs/v2/live-market-feed/">WebSocket</a> · <a href="https://dhanhq.co/docs/v2/option-chain/">Option chain</a> · <a href="https://dhanhq.co/docs/v2/historical-data/">Historical data</a></div></div>
-<div class="note" style="text-align:center;padding:5px 10px 14px">TradingView Lightweight Charts · Apache 2.0</div>
+<header>
+  <div><h1>NIFTY Option OI Profile</h1><div class="sub">Dhan v2 live data · Android</div></div>
+  <span class="pill" id="pill">NOT CONNECTED</span>
+</header>
+
+<div class="card">
+  <h2>1. Dhan connection</h2>
+  <label>Dhan Client ID</label>
+  <input id="cid" autocomplete="off" placeholder="Enter Client ID">
+  <label>Dhan Access Token</label>
+  <input id="token" type="password" autocomplete="off" placeholder="Paste current access token">
+  <button onclick="connectDhan()">Connect and load expiries</button>
+  <div class="note">Credentials stay in memory only. Never commit tokens.</div>
+  <div id="status" class="note">Disconnected.</div>
+</div>
+
+<div class="card">
+  <h2>2. Select live option contract</h2>
+  <label>Expiry</label>
+  <select id="expiry"><option value="">Connect to load expiry dates</option></select>
+  <button onclick="loadChain()">Load option chain</button>
+  <div class="grid">
+    <div><label>Strike</label><select id="strike"><option value="">Load chain first</option></select></div>
+    <div><label>Side</label><select id="side"><option value="ce">CE</option><option value="pe">PE</option></select></div>
+  </div>
+  <div class="grid">
+    <div>
+      <label>Chart interval</label>
+      <select id="interval">
+        <option value="1">1 minute</option>
+        <option value="5" selected>5 minutes</option>
+        <option value="15">15 minutes</option>
+        <option value="25">25 minutes</option>
+        <option value="60">60 minutes</option>
+      </select>
+    </div>
+    <div>
+      <label>Premium bucket</label>
+      <select id="bucket">
+        <option value="1">₹1</option>
+        <option value="2">₹2</option>
+        <option value="5" selected>₹5</option>
+        <option value="10">₹10</option>
+        <option value="25">₹25</option>
+      </select>
+    </div>
+  </div>
+  <button onclick="startContract()">Load candles + start live feed</button>
+  <button onclick="disconnect()">Disconnect live feed</button>
+  <div id="contractInfo" class="note"></div>
+</div>
+
+<div class="card">
+  <div class="metrics">
+    <div class="metric"><small>Live premium</small><b id="ltp">—</b></div>
+    <div class="metric"><small>Live OI</small><b id="oi">—</b></div>
+    <div class="metric"><small>OI-POC</small><b id="poc">—</b></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Live candlestick + premium OI profile</h2>
+  <div class="chartrow">
+    <div id="chart" class="chart"></div>
+    <div class="profile">
+      <div class="profiletitle" id="profiletitle">ΔOI BY PREMIUM</div>
+      <div id="profileRows"></div>
+    </div>
+  </div>
+  <div class="note">Bars show where OI increased (or absolute OI) at each premium. Green = highest POC. Profile is built from historical candle OI + live ticks.</div>
+</div>
+
+<div class="card">
+  <h2>Chart overlays</h2>
+  <div class="switches">
+    <label class="sw"><input id="dailyOn" type="checkbox" checked>Daily VWAP</label>
+    <label class="sw"><input id="weeklyOn" type="checkbox" checked>Weekly VWAP</label>
+    <label class="sw"><input id="monthlyOn" type="checkbox" checked>Monthly VWAP</label>
+    <label class="sw"><input id="pdOn" type="checkbox" checked>Prev day OHLC</label>
+    <label class="sw"><input id="pwOn" type="checkbox" checked>Prev week H/L</label>
+    <label class="sw"><input id="pmOn" type="checkbox" checked>Prev month H/L</label>
+    <label class="sw"><input type="radio" name="metric" value="doi" checked>ΔOI (OI increase)</label>
+    <label class="sw"><input type="radio" name="metric" value="oi">OI (absolute)</label>
+  </div>
+  <div class="note">Use ΔOI to see at which premium open interest increased. Absolute OI sums snapshots at each premium level.</div>
+</div>
+
+<div class="card">
+  <h2>Feed notes</h2>
+  <div class="note">Dhan v2: expiry-list, option-chain, intraday candles, WebSocket full feed. Verify against Dhan app before trading decisions.</div>
+  <div class="note">Docs: <a href="https://dhanhq.co/docs/v2/live-market-feed/">WebSocket</a> · <a href="https://dhanhq.co/docs/v2/option-chain/">Option chain</a></div>
+</div>
+
 <script>
-let chart,candles,dv,wv,mv,levelSeries=[],chain=null,selected=null,history=[],lastOi=null,profileSamples=[],liveBar=null;
-function setStatus(s,ok){document.getElementById('status').textContent=s;document.getElementById('pill').textContent=ok?'CONNECTED':'CHECK STATUS';document.getElementById('pill').style.color=ok?'#22c99a':'#ffca72';}
-window.onDhanStatus=o=>setStatus(o.message,o.ok);
-function connectDhan(){let cid=document.getElementById('cid').value.trim(),token=document.getElementById('token').value.trim();if(!cid||!token){setStatus('Enter Client ID and access token.',false);return;}DhanBridge.setCredentials(cid,token);}
-window.onExpiryResponse=(ok,text)=>{if(!ok){setStatus(text,false);return;}try{let j=JSON.parse(text),a=j.data||[];let s=document.getElementById('expiry');s.innerHTML='';a.forEach(x=>{let o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o)});setStatus('Expiry list loaded from Dhan. Select expiry and load chain.',true)}catch(e){setStatus('Could not parse expiry response: '+e,false)}};
-function loadChain(){let expiry=document.getElementById('expiry').value;if(!expiry){setStatus('Choose an expiry first.',false);return;}DhanBridge.fetchChain(expiry);}
-window.onChainResponse=(ok,text)=>{if(!ok){setStatus(text,false);return;}try{let j=JSON.parse(text);chain=j.data.oc||{};let s=document.getElementById('strike');s.innerHTML='';Object.keys(chain).sort((a,b)=>Number(a)-Number(b)).forEach(k=>{let o=document.createElement('option');o.value=k;o.textContent=k;s.appendChild(o)});setStatus('Live option chain loaded. Select strike/CE-PE.',true)}catch(e){setStatus('Could not parse option chain: '+e,false)}};
-function startContract(){if(!chain){setStatus('Load option chain first.',false);return;}let strike=document.getElementById('strike').value,side=document.getElementById('side').value;selected=chain[strike]&&chain[strike][side];if(!selected||!selected.security_id){setStatus('Selected contract has no security ID in Dhan response.',false);return;}let sid=String(selected.security_id);document.getElementById('contractInfo').textContent='Contract security ID '+sid+' · '+strike+' '+side.toUpperCase()+' · expiry '+document.getElementById('expiry').value;
-DhanBridge.loadCandles(sid,document.getElementById('interval').value);DhanBridge.connectContract(sid);lastOi=null;profileSamples=[];document.getElementById('ltp').textContent='Connecting…';}
-function disconnect(){DhanBridge.disconnect();}
-window.onCandlesResponse=(ok,text)=>{if(!ok){setStatus(text,false);return;}try{let j=JSON.parse(text),d=j.data||j;let n=d.timestamp.length;history=[];for(let i=0;i<n;i++)history.push({time:Number(d.timestamp[i]),open:+d.open[i],high:+d.high[i],low:+d.low[i],close:+d.close[i],volume:+(d.volume?.[i]||0),oi:+(d.oi?.[i]||0)});history.sort((a,b)=>a.time-b.time);candles.setData(history);recalcOverlays();chart.timeScale().fitContent();drawProfile();setStatus('Historical candles loaded. Waiting for live ticks…',true)}catch(e){setStatus('Candle response parse error: '+e,false)}};
-window.onDhanTick=t=>{if(!selected)return;if(t.ltp!==undefined&&isFinite(t.ltp)){document.getElementById('ltp').textContent='₹'+Number(t.ltp).toFixed(2);let now=Math.floor(Date.now()/1000);let time=Math.floor(now/(Number(document.getElementById('interval').value)*60))*(Number(document.getElementById('interval').value)*60);let last=history.length?history[history.length-1]:null;if(last&&last.time===time){last.high=Math.max(last.high,t.ltp);last.low=Math.min(last.low,t.ltp);last.close=t.ltp;last.volume=Math.max(last.volume||0,t.volume||0);candles.update({time,open:last.open,high:last.high,low:last.low,close:last.close})}else{let o=last?last.close:t.ltp;liveBar={time,open:o,high:Math.max(o,t.ltp),low:Math.min(o,t.ltp),close:t.ltp,volume:t.volume||0};candles.update(liveBar);history.push(liveBar);if(history.length>1500)history.shift();recalcOverlays()}}
-if(t.oi!==undefined&&isFinite(t.oi)){let oi=Number(t.oi);document.getElementById('oi').textContent=oi.toLocaleString('en-IN');let price=t.ltp!==undefined?Number(t.ltp):Number(document.getElementById('ltp').textContent.replace(/[₹,]/g,''));if(isFinite(price)&&price>0){profileSamples.push({price,oi,doi:lastOi===null?0:oi-lastOi,time:Date.now()});if(profileSamples.length>10000)profileSamples.shift()}lastOi=oi;drawProfile()}}
-function makeLine(color,title){return chart.addLineSeries({color,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title});}
-function vwap(mode){let pv=0,vol=0,keyPrev='',out=[];history.forEach(c=>{let dt=new Date(c.time*1000),key;if(mode==='d')key=dt.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});else if(mode==='w'){let day=dt.getUTCDay();let monday=new Date(c.time*1000);monday.setUTCDate(monday.getUTCDate()-(day===0?6:day-1));key=monday.toISOString().slice(0,10)}else key=dt.getUTCFullYear()+'-'+(dt.getUTCMonth()+1);if(key!==keyPrev){pv=0;vol=0;keyPrev=key}let typical=(c.high+c.low+c.close)/3,v=Number(c.volume)||0;pv+=typical*v;vol+=v;if(vol>0)out.push({time:c.time,value:pv/vol})});return out}
-function recalcOverlays(){
- if(!history.length)return;
- dv.setData(vwap('d'));wv.setData(vwap('w'));mv.setData(vwap('m'));
- levelSeries.forEach(s=>chart.removeSeries(s));levelSeries=[];
- const add=(price,color,title,group)=>{if(!isFinite(price))return;let s=chart.addLineSeries({color,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,priceLineVisible:false,lastValueVisible:true,title});s.setData([{time:history[0].time,value:price},{time:history[history.length-1].time,value:price}]);s.__group=group;levelSeries.push(s)};
- const dayKey=c=>new Date(c.time*1000).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
- let byDay={};history.forEach(c=>{let k=dayKey(c);(byDay[k]??=[]).push(c)});let days=Object.keys(byDay).sort();
- if(days.length>1){let prev=byDay[days[days.length-2]];add(prev[0].open,'#d6a2a2','Prev day O','pd');add(Math.max(...prev.map(c=>c.high)),'#ff6b80','Prev day H','pd');add(Math.min(...prev.map(c=>c.low)),'#ff6b80','Prev day L','pd');add(prev[prev.length-1].close,'#d6a2a2','Prev day C','pd')}
- const isoWeek=c=>{let d=new Date(c.time*1000);d.setUTCHours(0,0,0,0);d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));let y=d.getUTCFullYear();let yearStart=new Date(Date.UTC(y,0,1));return y+'-W'+String(Math.ceil((((d-yearStart)/86400000)+1)/7)).padStart(2,'0')};
- let byWeek={},byMonth={};history.forEach(c=>{(byWeek[isoWeek(c)]??=[]).push(c);let d=new Date(c.time*1000),k=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');(byMonth[k]??=[]).push(c)});
- let weeks=Object.keys(byWeek).sort(),months=Object.keys(byMonth).sort();
- if(weeks.length>1){let prev=byWeek[weeks[weeks.length-2]];add(Math.max(...prev.map(c=>c.high)),'#43c9a6','Prev week H','pw');add(Math.min(...prev.map(c=>c.low)),'#43c9a6','Prev week L','pw')}
- if(months.length>1){let prev=byMonth[months[months.length-2]];add(Math.max(...prev.map(c=>c.high)),'#b7a0ff','Prev month H','pm');add(Math.min(...prev.map(c=>c.low)),'#b7a0ff','Prev month L','pm')}
- applyVisibility()
+let chart, candles, dv, wv, mv, levelSeries = [], chain = null, selected = null;
+let history = [], lastOi = null, lastLtp = null, profileSamples = [], liveBar = null;
+const CHART_H = 480;
+
+function setStatus(s, ok) {
+  document.getElementById('status').textContent = s;
+  document.getElementById('pill').textContent = ok ? 'CONNECTED' : 'CHECK STATUS';
+  document.getElementById('pill').style.color = ok ? '#22c99a' : '#ffca72';
 }
-function applyVisibility(){if(!chart)return;dv.applyOptions({visible:document.getElementById('dailyOn').checked});wv.applyOptions({visible:document.getElementById('weeklyOn').checked});mv.applyOptions({visible:document.getElementById('monthlyOn').checked});levelSeries.forEach(s=>{let on=s.__group==='pd'?document.getElementById('pdOn').checked:s.__group==='pw'?document.getElementById('pwOn').checked:document.getElementById('pmOn').checked;s.applyOptions({visible:on})})}
-function drawProfile(){if(!chart)return;let rows=document.getElementById('profileRows');rows.innerHTML='';if(!profileSamples.length)return;let bucket=Number(document.getElementById('bucket').value)||2,metric=document.querySelector('input[name=metric]:checked').value,bins={};profileSamples.forEach(s=>{let p=Math.floor(s.price/bucket)*bucket;bins[p]=(bins[p]||0)+(metric==='oi'?s.oi:s.doi)});let keys=Object.keys(bins).map(Number),max=Math.max(1,...keys.map(k=>Math.abs(bins[k]))),best=keys.reduce((a,b)=>bins[b]>bins[a]?b:a,keys[0]);document.getElementById('poc').textContent='₹'+best;document.getElementById('profiletitle').textContent=metric==='oi'?'TOTAL OI':'ΔOI';keys.sort((a,b)=>b-a).forEach(p=>{let y=chart.priceScale('right').priceToCoordinate(p+bucket/2);if(y===null||y<0||y>310)return;let row=document.createElement('div');row.className='prow';row.style.top=Math.max(0,y-6)+'px';let bar=document.createElement('div');bar.className='bar'+(p===best?' poc':'');bar.style.width=(Math.abs(bins[p])/max*70)+'%';let val=document.createElement('span');val.className='pv';val.textContent=metric==='oi'?Math.round(bins[p]).toLocaleString('en-IN'):Math.round(bins[p]).toString();row.append(bar,val);rows.append(row)})}
-['dailyOn','weeklyOn','monthlyOn','pdOn','pwOn','pmOn','bucket'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{applyVisibility();drawProfile()}));document.querySelectorAll('input[name=metric]').forEach(x=>x.addEventListener('change',drawProfile));
-if(window.LightweightCharts){let el=document.getElementById('chart');chart=LightweightCharts.createChart(el,{layout:{background:{color:'#111b2b'},textColor:'#c7d2e4',fontSize:10},grid:{vertLines:{color:'#1d2b40'},horzLines:{color:'#1d2b40'}},rightPriceScale:{borderColor:'#2b3950'},timeScale:{borderColor:'#2b3950',timeVisible:true},width:el.clientWidth,height:310});candles=chart.addCandlestickSeries({upColor:'#22c99a',downColor:'#ff6b80',borderUpColor:'#22c99a',borderDownColor:'#ff6b80',wickUpColor:'#22c99a',wickDownColor:'#ff6b80'});dv=makeLine('#68a6ff','Daily VWAP');wv=makeLine('#ffca72','Weekly VWAP');mv=makeLine('#c7a1ff','Monthly VWAP');chart.subscribeVisibleLogicalRangeChange(drawProfile);window.addEventListener('resize',()=>{chart.applyOptions({width:el.clientWidth});drawProfile()})}
-</script></body></html>
+window.onDhanStatus = o => setStatus(o.message, o.ok);
+
+function connectDhan() {
+  let cid = document.getElementById('cid').value.trim();
+  let token = document.getElementById('token').value.trim();
+  if (!cid || !token) { setStatus('Enter Client ID and access token.', false); return; }
+  DhanBridge.setCredentials(cid, token);
+}
+
+window.onExpiryResponse = (ok, text) => {
+  if (!ok) { setStatus(text, false); return; }
+  try {
+    let j = JSON.parse(text), a = j.data || [];
+    let s = document.getElementById('expiry'); s.innerHTML = '';
+    a.forEach(x => { let o = document.createElement('option'); o.value = x; o.textContent = x; s.appendChild(o); });
+    setStatus('Expiry list loaded. Select expiry and load chain.', true);
+  } catch (e) { setStatus('Could not parse expiry response: ' + e, false); }
+};
+
+function loadChain() {
+  let expiry = document.getElementById('expiry').value;
+  if (!expiry) { setStatus('Choose an expiry first.', false); return; }
+  DhanBridge.fetchChain(expiry);
+}
+
+window.onChainResponse = (ok, text) => {
+  if (!ok) { setStatus(text, false); return; }
+  try {
+    let j = JSON.parse(text);
+    chain = j.data.oc || {};
+    let s = document.getElementById('strike'); s.innerHTML = '';
+    Object.keys(chain).sort((a, b) => Number(a) - Number(b)).forEach(k => {
+      let o = document.createElement('option'); o.value = k; o.textContent = k; s.appendChild(o);
+    });
+    setStatus('Live option chain loaded. Select strike/CE-PE.', true);
+  } catch (e) { setStatus('Could not parse option chain: ' + e, false); }
+};
+
+function startContract() {
+  if (!chain) { setStatus('Load option chain first.', false); return; }
+  let strike = document.getElementById('strike').value;
+  let side = document.getElementById('side').value;
+  selected = chain[strike] && chain[strike][side];
+  if (!selected || !selected.security_id) {
+    setStatus('Selected contract has no security ID in Dhan response.', false); return;
+  }
+  let sid = String(selected.security_id);
+  document.getElementById('contractInfo').textContent =
+    'Contract security ID ' + sid + ' · ' + strike + ' ' + side.toUpperCase() +
+    ' · expiry ' + document.getElementById('expiry').value;
+  lastOi = null; lastLtp = null; profileSamples = [];
+  document.getElementById('ltp').textContent = 'Connecting…';
+  document.getElementById('oi').textContent = '—';
+  document.getElementById('poc').textContent = '—';
+  DhanBridge.loadCandles(sid, document.getElementById('interval').value);
+  DhanBridge.connectContract(sid);
+}
+
+function disconnect() { DhanBridge.disconnect(); }
+
+function seedProfileFromHistory() {
+  // Build ΔOI profile from successive historical candles that carry OI
+  profileSamples = [];
+  let prevOi = null;
+  history.forEach(c => {
+    if (!c.oi || !isFinite(c.oi) || c.oi <= 0) return;
+    let price = Number(c.close);
+    if (!isFinite(price) || price <= 0) return;
+    let doi = prevOi === null ? 0 : (c.oi - prevOi);
+    profileSamples.push({ price, oi: c.oi, doi, time: c.time * 1000 });
+    prevOi = c.oi;
+  });
+  lastOi = prevOi;
+  if (history.length) {
+    let last = history[history.length - 1];
+    if (last && isFinite(last.close)) lastLtp = last.close;
+  }
+}
+
+window.onCandlesResponse = (ok, text) => {
+  if (!ok) { setStatus(text, false); return; }
+  try {
+    let j = JSON.parse(text), d = j.data || j;
+    let n = d.timestamp.length;
+    history = [];
+    for (let i = 0; i < n; i++) {
+      history.push({
+        time: Number(d.timestamp[i]),
+        open: +d.open[i], high: +d.high[i], low: +d.low[i], close: +d.close[i],
+        volume: +(d.volume && d.volume[i] || 0),
+        oi: +(d.oi && d.oi[i] || 0)
+      });
+    }
+    history.sort((a, b) => a.time - b.time);
+    candles.setData(history);
+    seedProfileFromHistory();
+    recalcOverlays();
+    chart.timeScale().fitContent();
+    drawProfile();
+    setStatus('Historical candles loaded (' + history.length + '). Waiting for live ticks…', true);
+  } catch (e) { setStatus('Candle response parse error: ' + e, false); }
+};
+
+window.onDhanTick = t => {
+  if (!selected) return;
+
+  // LTP path
+  if (t.ltp !== undefined && isFinite(t.ltp)) {
+    lastLtp = Number(t.ltp);
+    document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
+    let intervalSec = Number(document.getElementById('interval').value) * 60;
+    let now = Math.floor(Date.now() / 1000);
+    let time = Math.floor(now / intervalSec) * intervalSec;
+    let last = history.length ? history[history.length - 1] : null;
+    if (last && last.time === time) {
+      last.high = Math.max(last.high, lastLtp);
+      last.low = Math.min(last.low, lastLtp);
+      last.close = lastLtp;
+      if (t.volume !== undefined) last.volume = Math.max(last.volume || 0, t.volume || 0);
+      candles.update({ time, open: last.open, high: last.high, low: last.low, close: last.close });
+    } else {
+      let o = last ? last.close : lastLtp;
+      liveBar = {
+        time, open: o, high: Math.max(o, lastLtp), low: Math.min(o, lastLtp),
+        close: lastLtp, volume: t.volume || 0, oi: lastOi || 0
+      };
+      candles.update(liveBar);
+      history.push(liveBar);
+      if (history.length > 1500) history.shift();
+      recalcOverlays();
+    }
+  }
+
+  // OI path — use last known LTP if this packet has no price
+  if (t.oi !== undefined && isFinite(t.oi)) {
+    let oi = Number(t.oi);
+    document.getElementById('oi').textContent = oi.toLocaleString('en-IN');
+    let price = (t.ltp !== undefined && isFinite(t.ltp))
+      ? Number(t.ltp)
+      : (lastLtp !== null ? lastLtp : NaN);
+    if (isFinite(price) && price > 0) {
+      let doi = lastOi === null ? 0 : (oi - lastOi);
+      profileSamples.push({ price, oi, doi, time: Date.now() });
+      if (profileSamples.length > 10000) profileSamples.shift();
+      // keep latest OI on last bar
+      if (history.length) history[history.length - 1].oi = oi;
+    }
+    lastOi = oi;
+    drawProfile();
+  }
+};
+
+function makeLine(color, title) {
+  return chart.addLineSeries({
+    color, lineWidth: 1, priceLineVisible: false,
+    lastValueVisible: false, crosshairMarkerVisible: false, title
+  });
+}
+
+function vwap(mode) {
+  let pv = 0, vol = 0, keyPrev = '', out = [];
+  history.forEach(c => {
+    let dt = new Date(c.time * 1000), key;
+    if (mode === 'd') key = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    else if (mode === 'w') {
+      let day = dt.getUTCDay();
+      let monday = new Date(c.time * 1000);
+      monday.setUTCDate(monday.getUTCDate() - (day === 0 ? 6 : day - 1));
+      key = monday.toISOString().slice(0, 10);
+    } else key = dt.getUTCFullYear() + '-' + (dt.getUTCMonth() + 1);
+    if (key !== keyPrev) { pv = 0; vol = 0; keyPrev = key; }
+    let typical = (c.high + c.low + c.close) / 3, v = Number(c.volume) || 0;
+    pv += typical * v; vol += v;
+    if (vol > 0) out.push({ time: c.time, value: pv / vol });
+  });
+  return out;
+}
+
+function prevLevels() {
+  levelSeries.forEach(s => chart.removeSeries(s));
+  levelSeries = [];
+  if (history.length < 2) return;
+  let byDay = {}, byWeek = {}, byMonth = {};
+  history.forEach(c => {
+    let d = new Date(c.time * 1000);
+    let day = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    let dayNum = d.getUTCDay();
+    let mon = new Date(c.time * 1000);
+    mon.setUTCDate(mon.getUTCDate() - (dayNum === 0 ? 6 : dayNum - 1));
+    let week = mon.toISOString().slice(0, 10);
+    let month = d.getUTCFullYear() + '-' + (d.getUTCMonth() + 1);
+    if (!byDay[day]) byDay[day] = { o: c.open, h: c.high, l: c.low, c: c.close };
+    else {
+      byDay[day].h = Math.max(byDay[day].h, c.high);
+      byDay[day].l = Math.min(byDay[day].l, c.low);
+      byDay[day].c = c.close;
+    }
+    if (!byWeek[week]) byWeek[week] = { h: c.high, l: c.low };
+    else {
+      byWeek[week].h = Math.max(byWeek[week].h, c.high);
+      byWeek[week].l = Math.min(byWeek[week].l, c.low);
+    }
+    if (!byMonth[month]) byMonth[month] = { h: c.high, l: c.low };
+    else {
+      byMonth[month].h = Math.max(byMonth[month].h, c.high);
+      byMonth[month].l = Math.min(byMonth[month].l, c.low);
+    }
+  });
+  let days = Object.keys(byDay).sort();
+  let weeks = Object.keys(byWeek).sort();
+  let months = Object.keys(byMonth).sort();
+  function addLevel(price, color, group) {
+    if (!isFinite(price)) return;
+    let s = chart.addLineSeries({
+      color, lineWidth: 1, lineStyle: 2, priceLineVisible: false,
+      lastValueVisible: true, crosshairMarkerVisible: false
+    });
+    s.setData(history.map(c => ({ time: c.time, value: price })));
+    s.__group = group;
+    levelSeries.push(s);
+  }
+  if (days.length >= 2) {
+    let pd = byDay[days[days.length - 2]];
+    addLevel(pd.o, '#8899aa', 'pd');
+    addLevel(pd.h, '#68a6ff', 'pd');
+    addLevel(pd.l, '#68a6ff', 'pd');
+    addLevel(pd.c, '#8899aa', 'pd');
+  }
+  if (weeks.length >= 2) {
+    let pw = byWeek[weeks[weeks.length - 2]];
+    addLevel(pw.h, '#ffca72', 'pw');
+    addLevel(pw.l, '#ffca72', 'pw');
+  }
+  if (months.length >= 2) {
+    let pm = byMonth[months[months.length - 2]];
+    addLevel(pm.h, '#c7a1ff', 'pm');
+    addLevel(pm.l, '#c7a1ff', 'pm');
+  }
+  applyVisibility();
+}
+
+function recalcOverlays() {
+  if (!history.length) return;
+  dv.setData(vwap('d'));
+  wv.setData(vwap('w'));
+  mv.setData(vwap('m'));
+  prevLevels();
+  applyVisibility();
+}
+
+function applyVisibility() {
+  dv.applyOptions({ visible: document.getElementById('dailyOn').checked });
+  wv.applyOptions({ visible: document.getElementById('weeklyOn').checked });
+  mv.applyOptions({ visible: document.getElementById('monthlyOn').checked });
+  levelSeries.forEach(s => {
+    let on = s.__group === 'pd' ? document.getElementById('pdOn').checked
+      : s.__group === 'pw' ? document.getElementById('pwOn').checked
+      : document.getElementById('pmOn').checked;
+    s.applyOptions({ visible: on });
+  });
+}
+
+function drawProfile() {
+  if (!chart) return;
+  let rows = document.getElementById('profileRows');
+  rows.innerHTML = '';
+  if (!profileSamples.length) return;
+
+  let bucket = Number(document.getElementById('bucket').value) || 5;
+  let metric = document.querySelector('input[name=metric]:checked').value;
+  let bins = {};
+
+  profileSamples.forEach(s => {
+    let p = Math.floor(s.price / bucket) * bucket;
+    let val = metric === 'oi' ? s.oi : s.doi;
+    // For absolute OI keep the latest snapshot per bucket (not sum of all ticks)
+    if (metric === 'oi') bins[p] = val;
+    else bins[p] = (bins[p] || 0) + val;
+  });
+
+  let keys = Object.keys(bins).map(Number);
+  if (!keys.length) return;
+
+  // POC = highest absolute value for display; for ΔOI prefer largest positive increase
+  let best = keys[0];
+  if (metric === 'doi') {
+    best = keys.reduce((a, b) => bins[b] > bins[a] ? b : a, keys[0]);
+  } else {
+    best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
+  }
+  let max = Math.max(1, ...keys.map(k => Math.abs(bins[k])));
+
+  document.getElementById('poc').textContent = '₹' + best;
+  document.getElementById('profiletitle').textContent = metric === 'oi' ? 'OI BY PREMIUM' : 'ΔOI BY PREMIUM';
+
+  keys.sort((a, b) => b - a).forEach(p => {
+    let y = chart.priceScale('right').priceToCoordinate(p + bucket / 2);
+    if (y === null || y < 0 || y > CHART_H) return;
+    let row = document.createElement('div');
+    row.className = 'prow';
+    row.style.top = Math.max(0, y - 7) + 'px';
+    let bar = document.createElement('div');
+    bar.className = 'bar' + (p === best ? ' poc' : '') + (bins[p] < 0 ? ' neg' : '');
+    bar.style.width = (Math.abs(bins[p]) / max * 72) + '%';
+    let val = document.createElement('span');
+    val.className = 'pv';
+    let n = Math.round(bins[p]);
+    val.textContent = (n > 0 && metric === 'doi' ? '+' : '') + n.toLocaleString('en-IN');
+    row.append(bar, val);
+    rows.append(row);
+  });
+}
+
+['dailyOn', 'weeklyOn', 'monthlyOn', 'pdOn', 'pwOn', 'pmOn', 'bucket'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => { applyVisibility(); drawProfile(); });
+});
+document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', drawProfile));
+
+if (window.LightweightCharts) {
+  let el = document.getElementById('chart');
+  chart = LightweightCharts.createChart(el, {
+    layout: { background: { color: '#111b2b' }, textColor: '#c7d2e4', fontSize: 10 },
+    grid: { vertLines: { color: '#1d2b40' }, horzLines: { color: '#1d2b40' } },
+    rightPriceScale: { borderColor: '#2b3950' },
+    timeScale: { borderColor: '#2b3950', timeVisible: true },
+    width: el.clientWidth,
+    height: CHART_H
+  });
+  candles = chart.addCandlestickSeries({
+    upColor: '#22c99a', downColor: '#ff6b80',
+    borderUpColor: '#22c99a', borderDownColor: '#ff6b80',
+    wickUpColor: '#22c99a', wickDownColor: '#ff6b80'
+  });
+  dv = makeLine('#68a6ff', 'Daily VWAP');
+  wv = makeLine('#ffca72', 'Weekly VWAP');
+  mv = makeLine('#c7a1ff', 'Monthly VWAP');
+  chart.subscribeVisibleLogicalRangeChange(drawProfile);
+  window.addEventListener('resize', () => {
+    chart.applyOptions({ width: el.clientWidth });
+    drawProfile();
+  });
+}
+</script>
+</body></html>

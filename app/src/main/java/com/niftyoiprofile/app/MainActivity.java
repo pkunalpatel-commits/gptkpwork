@@ -125,7 +125,7 @@ public class MainActivity extends Activity {
                     try {
                         JSONObject item = new JSONObject(); item.put("ExchangeSegment", selectedSegment); item.put("SecurityId", securityId);
                         JSONArray list = new JSONArray(); list.put(item);
-                        JSONObject sub = new JSONObject(); sub.put("RequestCode", 17); sub.put("InstrumentCount", 1); sub.put("InstrumentList", list);
+                        JSONObject sub = new JSONObject(); sub.put("RequestCode", 21); sub.put("InstrumentCount", 1); sub.put("InstrumentList", list);
                         ws.send(sub.toString());
                         status("Dhan WebSocket connected; subscribed to contract " + securityId, true);
                     } catch (Exception e) { status("Subscription error: " + e.getMessage(), false); }
