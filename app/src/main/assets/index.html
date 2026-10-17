@@ -137,9 +137,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <label class="sw"><input id="oiZoneOn" type="checkbox" checked>High-OI zone</label>
 </div>
 <div class="swrow">
-  <label class="sw"><input type="radio" name="metric" value="doi" checked>ΔOI up &amp; down</label>
-  <label class="sw"><input type="radio" name="metric" value="doi_up">OI increase only</label>
-  <label class="sw"><input type="radio" name="metric" value="doi_down">OI decrease only</label>
+  <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
   <label class="sw"><input type="radio" name="metric" value="oi">OI level</label>
   <label class="sw"><input id="showTable" type="checkbox" checked>Show OI table</label>
 </div>
@@ -154,7 +152,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     <label class="sw"><input type="radio" name="sortDir" value="asc">Ascending</label>
   </div>
   <table>
-    <thead><tr><th>Premium range</th><th>OI Δ</th><th>% of total</th><th>Last time</th></tr></thead>
+    <thead><tr><th>Premium range</th><th>OI generated</th><th>% of total</th><th>Last time</th></tr></thead>
     <tbody id="oiTable"><tr><td colspan="4" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
@@ -579,7 +577,8 @@ function drawProfile() {
 
   tbody.innerHTML = sorted.map(p => {
     let n = Math.round(bins[p]);
-    let pct = (Math.abs(bins[p]) / total * 100).toFixed(1);
+    let rawPct = Math.abs(bins[p]) / total * 100;
+    let pct = rawPct >= 0.1 ? rawPct.toFixed(1) : (rawPct > 0 ? rawPct.toFixed(2) : '0');
     let isPoc = p === best;
     let isDown = n < 0;
     let cls = isPoc ? ' class="poc"' : (isDown ? ' class="oi-down"' : (n > 0 ? ' class="oi-up"' : ''));
