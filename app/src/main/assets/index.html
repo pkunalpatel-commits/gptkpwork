@@ -143,12 +143,13 @@ td.poc{color:var(--green);font-weight:700}
   <div class="swrow" style="margin:0 0 8px 0">
     <label class="sw"><input type="radio" name="sortBy" value="premium" checked>By premium</label>
     <label class="sw"><input type="radio" name="sortBy" value="oi">By OI</label>
+    <label class="sw"><input type="radio" name="sortBy" value="time">By time</label>
     <label class="sw"><input type="radio" name="sortDir" value="desc" checked>Descending</label>
     <label class="sw"><input type="radio" name="sortDir" value="asc">Ascending</label>
   </div>
   <table>
-    <thead><tr><th>Premium range</th><th>OI</th><th>% of total</th></tr></thead>
-    <tbody id="oiTable"><tr><td colspan="3" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
+    <thead><tr><th>Premium range</th><th>OI</th><th>% of total</th><th>Last time</th></tr></thead>
+    <tbody id="oiTable"><tr><td colspan="4" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
 <p class="note">Chart shows POC, high-OI zone, previous day OHLC, and Initial Balance (first 60 min of session). Full OI table is optional. Hide right OI profile with the button.</p>
@@ -448,28 +449,49 @@ function vwap(mode) {
   return out;
 }
 
+function formatIstTime(ms) {
+  if (!ms || !isFinite(ms)) return '—';
+  // history samples store time as ms; candle times were time*1000
+  let d = new Date(ms);
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).format(d);
+  } catch (e) {
+    return d.toISOString().slice(0, 16).replace('T', ' ');
+  }
+}
+
 function buildBins() {
   let bucket = Number(document.getElementById('bucket').value) || 5;
   let metric = document.querySelector('input[name=metric]:checked').value;
   let bins = {};
+  let lastTime = {};
   profileSamples.forEach(s => {
     let p = Math.floor(Number(s.price) / bucket) * bucket;
     if (!isFinite(p)) return;
     if (metric === 'oi') bins[p] = Number(s.oi) || 0;
     else bins[p] = (bins[p] || 0) + (Number(s.doi) || 0);
+    let t = Number(s.time) || 0;
+    if (t && (!lastTime[p] || t > lastTime[p])) lastTime[p] = t;
   });
   let keys = Object.keys(bins).map(Number);
   let allZero = !keys.length || keys.every(k => !bins[k]);
   if (metric === 'doi' && allZero && profileSamples.length) {
     bins = {};
+    lastTime = {};
     profileSamples.forEach(s => {
       let p = Math.floor(Number(s.price) / bucket) * bucket;
       if (!isFinite(p)) return;
       bins[p] = Number(s.oi) || 0;
+      let t = Number(s.time) || 0;
+      if (t && (!lastTime[p] || t > lastTime[p])) lastTime[p] = t;
     });
-    return { bins, bucket, metric: 'oi', fallback: true };
+    return { bins, lastTime, bucket, metric: 'oi', fallback: true };
   }
-  return { bins, bucket, metric, fallback: false };
+  return { bins, lastTime, bucket, metric, fallback: false };
 }
 
 function recalcOverlays() {
@@ -522,14 +544,16 @@ function recalcOverlays() {
 }
 
 function drawProfile() {
-  let { bins, bucket, metric, fallback } = buildBins();
+  let built = buildBins();
+  let bins = built.bins, lastTime = built.lastTime || {}, bucket = built.bucket;
+  let metric = built.metric, fallback = built.fallback;
   let keys = Object.keys(bins).map(Number).filter(k => isFinite(k) && bins[k] !== 0);
   let tbody = document.getElementById('oiTable');
   let showTable = document.getElementById('showTable').checked;
   document.getElementById('tableCard').classList.toggle('hidden', !showTable);
 
   if (!keys.length) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8fa0b8">No premium/OI samples yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#8fa0b8">No premium/OI samples yet</td></tr>';
     document.getElementById('poc').textContent = '—';
     document.getElementById('profiletitle').textContent = 'WAITING DATA';
     paintCanvasEmpty();
@@ -547,6 +571,7 @@ function drawProfile() {
   let mult = sortDir === 'asc' ? 1 : -1;
   let sorted = keys.slice();
   if (sortBy === 'oi') sorted.sort((a, b) => mult * (bins[a] - bins[b]));
+  else if (sortBy === 'time') sorted.sort((a, b) => mult * ((lastTime[a] || 0) - (lastTime[b] || 0)));
   else sorted.sort((a, b) => mult * (a - b));
 
   tbody.innerHTML = sorted.map(p => {
@@ -554,11 +579,13 @@ function drawProfile() {
     let pct = (Math.abs(bins[p]) / total * 100).toFixed(1);
     let cls = p === best ? ' class="poc"' : '';
     let sign = (metric !== 'oi' && n > 0) ? '+' : '';
+    let when = formatIstTime(lastTime[p]);
     return '<tr' + cls + '><td>₹' + p + ' – ' + (p + bucket) + '</td><td>' +
-      sign + n.toLocaleString('en-IN') + '</td><td>' + pct + '%</td></tr>';
+      sign + n.toLocaleString('en-IN') + '</td><td>' + pct + '%</td>' +
+      '<td style="white-space:nowrap;color:#8fa0b8;font-size:10px">' + when + '</td></tr>';
   }).join('');
 
-  // Option 4 side panel: only top key levels as short bars (not full histogram clutter)
+  // Option 4 side panel: only top key levels as short bars
   paintKeyLevels(bins, keys, bucket, best);
 }
 
