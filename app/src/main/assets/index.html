@@ -63,18 +63,25 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <span class="pill" id="pill">OFFLINE</span>
 </header>
 
-<details class="setup" open id="setupPanel">
-  <summary>⚙ Setup · Dhan + Contract</summary>
+<details class="setup" open id="dhanPanel">
+  <summary>🔐 Dhan ID · token</summary>
   <div class="setup-body">
     <label>Client ID</label>
     <input id="cid" autocomplete="off" placeholder="Dhan Client ID">
     <label>Access Token</label>
     <input id="token" type="password" autocomplete="off" placeholder="Access token">
-    <button onclick="connectDhan()">1. Connect</button>
+    <button onclick="connectDhan()">Connect</button>
     <button class="sec" type="button" onclick="clearSavedCreds()">Clear saved ID / token</button>
+    <div class="status" id="status">Credentials saved on this device (until Clear). Chart times &amp; IB use NSE session IST (09:15–15:30).</div>
+  </div>
+</details>
+
+<details class="setup" open id="contractPanel">
+  <summary>📈 Option load · contract</summary>
+  <div class="setup-body">
     <label>Expiry</label>
     <select id="expiry"><option value="">—</option></select>
-    <button class="sec" onclick="loadChain()">2. Load option chain</button>
+    <button class="sec" onclick="loadChain()">Load option chain</button>
     <div class="grid2">
       <div>
         <label>Strike</label>
@@ -105,9 +112,8 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
         </select>
       </div>
     </div>
-    <button onclick="startContract()">3. Load candles + live feed</button>
-    <button class="sec" onclick="disconnect()">Disconnect</button>
-    <div class="status" id="status">Credentials saved on this device (until Clear). Chart times & IB use NSE session IST (09:15–15:30).</div>
+    <button onclick="startContract()">Load candles + live feed</button>
+    <button class="sec" onclick="disconnect()">Disconnect live feed</button>
     <div class="status" id="contractInfo"></div>
   </div>
 </details>
@@ -275,7 +281,10 @@ function startContract() {
     document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
   }
 
-  document.getElementById('setupPanel').open = false;
+  let cp = document.getElementById('contractPanel');
+  if (cp) cp.open = false;
+  let dp = document.getElementById('dhanPanel');
+  if (dp) dp.open = false;
   setTimeout(() => { resizeChart(); drawProfile(); }, 80);
   DhanBridge.loadCandles(sid, document.getElementById('interval').value);
   DhanBridge.connectContract(sid);
