@@ -59,7 +59,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 </head>
 <body>
 <header>
-  <h1>NIFTY OI · Premium Profile</h1>
+  <h1>F&amp;O OI · Premium Profile</h1>
   <span class="pill" id="pill">OFFLINE</span>
 </header>
 
@@ -79,6 +79,19 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 <details class="setup" open id="contractPanel">
   <summary>📈 Option load · contract</summary>
   <div class="setup-body">
+    <label>Underlying / symbol</label>
+    <select id="underlying" onchange="onUnderlyingChange()"></select>
+    <div id="customUnderlying" style="display:none">
+      <label>Custom underlying security ID (NSE equity ID for stocks)</label>
+      <input id="customScrip" inputmode="numeric" placeholder="e.g. 2885 for RELIANCE">
+      <label>Underlying segment</label>
+      <select id="customSeg">
+        <option value="NSE_EQ">NSE_EQ (stock F&amp;O)</option>
+        <option value="IDX_I">IDX_I (NSE index)</option>
+        <option value="IDX_B">IDX_B (BSE index)</option>
+      </select>
+    </div>
+    <button class="sec" type="button" onclick="loadExpiriesForSelected()">Load expiries for symbol</button>
     <label>Expiry</label>
     <select id="expiry"><option value="">—</option></select>
     <button class="sec" onclick="loadChain()">Load option chain</button>
@@ -182,6 +195,85 @@ function setStatus(s, ok) {
 }
 window.onDhanStatus = o => setStatus(o.message, o.ok);
 
+// Predefined underlyings for option chain (Dhan security ids)
+const UNDERLYINGS = [
+  { id: 'NIFTY', label: 'NIFTY 50 (NSE Index)', scrip: 13, seg: 'IDX_I', optExch: 'NSE_FNO', instrument: 'OPTIDX' },
+  { id: 'BANKNIFTY', label: 'BANK NIFTY (NSE Index)', scrip: 25, seg: 'IDX_I', optExch: 'NSE_FNO', instrument: 'OPTIDX' },
+  { id: 'FINNIFTY', label: 'FIN NIFTY (NSE Index)', scrip: 27, seg: 'IDX_I', optExch: 'NSE_FNO', instrument: 'OPTIDX' },
+  { id: 'MIDCPNIFTY', label: 'MIDCP NIFTY (NSE Index)', scrip: 442, seg: 'IDX_I', optExch: 'NSE_FNO', instrument: 'OPTIDX' },
+  { id: 'SENSEX', label: 'SENSEX (BSE Index)', scrip: 51, seg: 'IDX_B', optExch: 'BSE_FNO', instrument: 'OPTIDX' },
+  { id: 'BANKEX', label: 'BANKEX (BSE Index)', scrip: 12, seg: 'IDX_B', optExch: 'BSE_FNO', instrument: 'OPTIDX' },
+  // Liquid NSE F&O stocks (underlying = NSE equity security id)
+  { id: 'RELIANCE', label: 'RELIANCE (NSE F&O Stock)', scrip: 2885, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'HDFCBANK', label: 'HDFCBANK (NSE F&O Stock)', scrip: 1333, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'ICICIBANK', label: 'ICICIBANK (NSE F&O Stock)', scrip: 4963, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'INFY', label: 'INFY (NSE F&O Stock)', scrip: 1594, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'TCS', label: 'TCS (NSE F&O Stock)', scrip: 11536, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'SBIN', label: 'SBIN (NSE F&O Stock)', scrip: 3045, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'BHARTIARTL', label: 'BHARTIARTL (NSE F&O Stock)', scrip: 10604, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'ITC', label: 'ITC (NSE F&O Stock)', scrip: 1660, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'LT', label: 'LT (NSE F&O Stock)', scrip: 11483, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'KOTAKBANK', label: 'KOTAKBANK (NSE F&O Stock)', scrip: 1922, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'AXISBANK', label: 'AXISBANK (NSE F&O Stock)', scrip: 5900, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'BAJFINANCE', label: 'BAJFINANCE (NSE F&O Stock)', scrip: 317, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'MARUTI', label: 'MARUTI (NSE F&O Stock)', scrip: 10999, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'TATAMOTORS', label: 'TATAMOTORS (NSE F&O Stock)', scrip: 3456, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'CUSTOM', label: 'Custom security ID…', scrip: 0, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' }
+];
+
+let currentUnderlying = UNDERLYINGS[0];
+
+function populateUnderlyingSelect() {
+  let s = document.getElementById('underlying');
+  if (!s) return;
+  s.innerHTML = '';
+  UNDERLYINGS.forEach((u, i) => {
+    let o = document.createElement('option');
+    o.value = u.id;
+    o.textContent = u.label;
+    if (i === 0) o.selected = true;
+    s.appendChild(o);
+  });
+}
+
+function resolveUnderlying() {
+  let id = document.getElementById('underlying').value;
+  let u = UNDERLYINGS.find(x => x.id === id) || UNDERLYINGS[0];
+  if (u.id === 'CUSTOM') {
+    let scrip = Number(document.getElementById('customScrip').value);
+    let seg = document.getElementById('customSeg').value;
+    if (!scrip) return null;
+    return {
+      id: 'CUSTOM', label: 'Custom ' + scrip,
+      scrip: scrip, seg: seg,
+      optExch: seg === 'IDX_B' ? 'BSE_FNO' : 'NSE_FNO',
+      instrument: (seg === 'NSE_EQ') ? 'OPTSTK' : 'OPTIDX'
+    };
+  }
+  return u;
+}
+
+function onUnderlyingChange() {
+  let id = document.getElementById('underlying').value;
+  document.getElementById('customUnderlying').style.display = id === 'CUSTOM' ? 'block' : 'none';
+  document.getElementById('expiry').innerHTML = '<option value="">Load expiries…</option>';
+  document.getElementById('strike').innerHTML = '<option value="">—</option>';
+  chain = null;
+}
+
+function loadExpiriesForSelected() {
+  let u = resolveUnderlying();
+  if (!u) { setStatus('Enter a valid custom security ID.', false); return; }
+  currentUnderlying = u;
+  if (!window.DhanBridge) { setStatus('Bridge not ready.', false); return; }
+  DhanBridge.fetchExpiriesForUnderlying(
+    String(u.scrip), u.seg, u.optExch, u.instrument
+  );
+  setStatus('Loading expiries for ' + u.label + '…', true);
+}
+
+
+
 function toggleOiProfile() {
   showProfilePane = !showProfilePane;
   let pane = document.getElementById('profilePane');
@@ -265,6 +357,7 @@ function startContract() {
   if (!sid) { setStatus('No security_id for this contract.', false); return; }
   sid = String(sid);
   document.getElementById('contractInfo').textContent =
+    (currentUnderlying && currentUnderlying.label ? currentUnderlying.label + ' · ' : '') +
     sid + ' · ' + strike + ' ' + side.toUpperCase() + ' · ' + document.getElementById('expiry').value;
 
   let chainOi = Number(selected.oi || selected.OI || selected.open_interest || 0);

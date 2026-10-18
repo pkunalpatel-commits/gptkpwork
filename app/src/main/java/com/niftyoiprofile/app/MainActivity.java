@@ -36,6 +36,10 @@ public class MainActivity extends Activity {
     private volatile String accessToken = "";
     private volatile String selectedSecurityId = "";
     private volatile String selectedSegment = "NSE_FNO";
+    private volatile int underlyingScrip = 13;
+    private volatile String underlyingSeg = "IDX_I";
+    private volatile String candleInstrument = "OPTIDX";
+    private volatile String candleExchange = "NSE_FNO";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -154,12 +158,27 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        @JavascriptInterface
+        public void setUnderlying(String scrip, String seg, String optExchange, String instrument) {
+            try {
+                underlyingScrip = Integer.parseInt(scrip.trim());
+            } catch (Exception e) {
+                status("Invalid underlying security id.", false);
+                return;
+            }
+            underlyingSeg = seg != null ? seg.trim() : "IDX_I";
+            candleExchange = optExchange != null ? optExchange.trim() : "NSE_FNO";
+            candleInstrument = instrument != null ? instrument.trim() : "OPTIDX";
+            selectedSegment = candleExchange;
+            status("Underlying set: " + underlyingScrip + " / " + underlyingSeg, true);
+        }
+
         public void fetchExpiries() {
             if (!ready()) return;
             try {
                 JSONObject b = new JSONObject();
-                b.put("UnderlyingScrip", 13);
-                b.put("UnderlyingSeg", "IDX_I");
+                b.put("UnderlyingScrip", underlyingScrip);
+                b.put("UnderlyingSeg", underlyingSeg);
                 postJson("https://api.dhan.co/v2/optionchain/expirylist", b, "window.onExpiryResponse");
             } catch (Exception e) {
                 status("Expiry request error: " + e.getMessage(), false);
@@ -167,12 +186,18 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void fetchExpiriesForUnderlying(String scrip, String seg, String optExchange, String instrument) {
+            setUnderlying(scrip, seg, optExchange, instrument);
+            fetchExpiries();
+        }
+
+        @JavascriptInterface
         public void fetchChain(String expiry) {
             if (!ready()) return;
             try {
                 JSONObject b = new JSONObject();
-                b.put("UnderlyingScrip", 13);
-                b.put("UnderlyingSeg", "IDX_I");
+                b.put("UnderlyingScrip", underlyingScrip);
+                b.put("UnderlyingSeg", underlyingSeg);
                 b.put("Expiry", expiry);
                 postJson("https://api.dhan.co/v2/optionchain", b, "window.onChainResponse");
             } catch (Exception e) {
@@ -187,8 +212,8 @@ public class MainActivity extends Activity {
                 selectedSecurityId = securityId;
                 JSONObject b = new JSONObject();
                 b.put("securityId", securityId);
-                b.put("exchangeSegment", "NSE_FNO");
-                b.put("instrument", "OPTIDX");
+                b.put("exchangeSegment", candleExchange);
+                b.put("instrument", candleInstrument);
                 b.put("interval", interval);
                 b.put("oi", true);
                 // Dhan requires "yyyy-MM-dd HH:mm:ss" strings (IST), not epoch
