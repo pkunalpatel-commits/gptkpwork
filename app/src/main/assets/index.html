@@ -119,7 +119,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 
 <div class="chart-card">
   <h2>
-    <span>Candles · POC / IB / Prev OHLC</span>
+    <span>Candles · latest OI POC / IB / Prev OHLC</span>
     <button type="button" class="toggle-btn" id="btnToggleProfile" onclick="toggleOiProfile()">Hide OI profile</button>
   </h2>
   <div class="chartrow" id="chartrow">
@@ -136,8 +136,8 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <label class="sw"><input id="weeklyOn" type="checkbox" checked>Weekly VWAP</label>
   <label class="sw"><input id="pdOn" type="checkbox" checked>Prev day OHLC</label>
   <label class="sw"><input id="ibOn" type="checkbox" checked>IB 1st hour</label>
-  <label class="sw"><input id="pocOn" type="checkbox" checked>POC line</label>
-  <label class="sw"><input id="oiZoneOn" type="checkbox" checked>High-OI zone</label>
+  <label class="sw"><input id="pocOn" type="checkbox" checked>OI POC (latest)</label>
+  <label class="sw"><input id="oiZoneOn" type="checkbox" checked>Big OI increase</label>
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
@@ -157,7 +157,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     <tbody id="oiTable"><tr><td colspan="4" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
-<p class="note">Chart shows POC, high-OI zone, previous day OHLC, and Initial Balance (first 60 min of session). Full OI table is optional. Hide right OI profile with the button.</p>
+<p class="note">Chart: thick line = latest highest-OI premium (POC). Optional second thick line = largest current OI increase (if different). Old OI levels are not kept on the chart. Table still has full premium vs OI history.</p>
 
 <script>
 let chart, candles, dv, wv, chain = null, selected = null;
@@ -353,9 +353,9 @@ window.onDhanTick = t => {
   }
 };
 
-function makeLine(color, title, style) {
+function makeLine(color, title, style, width) {
   return chart.addLineSeries({
-    color, lineWidth: 1, lineStyle: style || 0,
+    color, lineWidth: width || 1, lineStyle: style || 0,
     priceLineVisible: false, lastValueVisible: true,
     crosshairMarkerVisible: false, title: title || ''
   });
@@ -366,9 +366,9 @@ function clearLevels() {
   levelSeries = [];
 }
 
-function addLevel(price, color, title, group, style) {
+function addLevel(price, color, title, group, style, width) {
   if (!isFinite(price) || !history.length) return;
-  let s = makeLine(color, title, style || 2);
+  let s = makeLine(color, title, style || 2, width || 1);
   s.setData(history.map(c => ({ time: c.time, value: price })));
   s.__group = group;
   levelSeries.push(s);
@@ -547,25 +547,32 @@ function recalcOverlays() {
     }
   }
 
-  // Option 4: POC + high-OI zone only on chart
+    // Latest-only OI on chart: thick POC + optional big ΔOI increase (no old levels)
   let { bins, bucket } = buildBins();
   let keys = Object.keys(bins).map(Number).filter(k => bins[k]);
   if (keys.length) {
+    // Highest |OI| / generated at premium (current bins only — old lines cleared above)
     let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
+    let pocPrice = best + bucket / 2;
     if (document.getElementById('pocOn').checked) {
-      addLevel(best + bucket / 2, '#1ecf9a', 'OI POC', 'poc', 0);
+      addLevel(pocPrice, '#1ecf9a', 'OI POC ₹' + best, 'poc', 0, 3);
     }
-    if (document.getElementById('oiZoneOn').checked) {
-      // top 3 buckets by |OI| → high / low of zone
-      keys.sort((a, b) => Math.abs(bins[b]) - Math.abs(bins[a]));
-      let top = keys.slice(0, Math.min(3, keys.length));
-      let zHi = Math.max(...top) + bucket;
-      let zLo = Math.min(...top);
-      addLevel(zHi, '#2a7d74', 'OI Zone H', 'zone', 3);
-      addLevel(zLo, '#2a7d74', 'OI Zone L', 'zone', 3);
+    // Biggest positive OI increase among current bins (latest only)
+    let upKeys = keys.filter(k => bins[k] > 0);
+    if (document.getElementById('oiZoneOn') && document.getElementById('oiZoneOn').checked && upKeys.length) {
+      let big = upKeys.reduce((a, b) => bins[b] > bins[a] ? b : a, upKeys[0]);
+      let bigPrice = big + bucket / 2;
+      // only draw second line if different premium from POC
+      if (big !== best) {
+        addLevel(bigPrice, '#ffc857', 'Big OI↑ ₹' + big, 'bigoi', 0, 3);
+      } else if (!document.getElementById('pocOn').checked) {
+        // if POC off but big increase on, still show thick line at that premium
+        addLevel(bigPrice, '#ffc857', 'Big OI↑ ₹' + big, 'bigoi', 0, 3);
+      }
     }
   }
 }
+
 
 function drawProfile() {
   let built = buildBins();
