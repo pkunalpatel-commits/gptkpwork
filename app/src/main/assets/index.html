@@ -898,10 +898,9 @@ function recalcOverlays() {
   let { bins, bucket } = buildBins();
   let keys = Object.keys(bins).map(Number).filter(k => bins[k]);
   if (keys.length) {
-    // Highest |OI| / generated — line at bucket floor price (matches label ₹X)
-    // (previously used bucket/2 which drew at e.g. 12.5 while label said ₹10)
+    // Highest |OI| / generated at premium (current bins only — old lines cleared above)
     let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
-    let pocPrice = best; // exact bucket start = label
+    let pocPrice = best + bucket / 2;
     if (document.getElementById('pocOn').checked) {
       addLevel(pocPrice, '#1ecf9a', 'OI POC ₹' + best, 'poc', 0, 3);
     }
@@ -909,10 +908,12 @@ function recalcOverlays() {
     let upKeys = keys.filter(k => bins[k] > 0);
     if (document.getElementById('oiZoneOn') && document.getElementById('oiZoneOn').checked && upKeys.length) {
       let big = upKeys.reduce((a, b) => bins[b] > bins[a] ? b : a, upKeys[0]);
-      let bigPrice = big; // same as label — not mid-bucket
+      let bigPrice = big + bucket / 2;
+      // only draw second line if different premium from POC
       if (big !== best) {
         addLevel(bigPrice, '#ffc857', 'Big OI↑ ₹' + big, 'bigoi', 0, 3);
       } else if (!document.getElementById('pocOn').checked) {
+        // if POC off but big increase on, still show thick line at that premium
         addLevel(bigPrice, '#ffc857', 'Big OI↑ ₹' + big, 'bigoi', 0, 3);
       }
     }
