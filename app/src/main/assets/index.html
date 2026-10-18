@@ -71,6 +71,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     <label>Access Token</label>
     <input id="token" type="password" autocomplete="off" placeholder="Access token">
     <button onclick="connectDhan()">1. Connect</button>
+    <button class="sec" type="button" onclick="clearSavedCreds()">Clear saved ID / token</button>
     <label>Expiry</label>
     <select id="expiry"><option value="">—</option></select>
     <button class="sec" onclick="loadChain()">2. Load option chain</button>
@@ -106,7 +107,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     </div>
     <button onclick="startContract()">3. Load candles + live feed</button>
     <button class="sec" onclick="disconnect()">Disconnect</button>
-    <div class="status" id="status">Enter credentials to start.</div>
+    <div class="status" id="status">Credentials saved on this device (until Clear). Chart times & IB use NSE session IST (09:15–15:30).</div>
     <div class="status" id="contractInfo"></div>
   </div>
 </details>
@@ -189,11 +190,27 @@ function toggleOiProfile() {
   setTimeout(() => { resizeChart(); drawProfile(); }, 50);
 }
 
+window.onSavedCredentials = function(o) {
+  if (!o) return;
+  if (o.clientId) document.getElementById('cid').value = o.clientId;
+  if (o.accessToken) document.getElementById('token').value = o.accessToken;
+  if (o.clientId && o.accessToken) {
+    setStatus('Saved credentials loaded. Tap Connect if needed.', true);
+  }
+};
+
 function connectDhan() {
   let cid = document.getElementById('cid').value.trim();
   let token = document.getElementById('token').value.trim();
   if (!cid || !token) { setStatus('Enter Client ID and token.', false); return; }
   DhanBridge.setCredentials(cid, token);
+}
+
+function clearSavedCreds() {
+  document.getElementById('cid').value = '';
+  document.getElementById('token').value = '';
+  if (window.DhanBridge && DhanBridge.clearCredentials) DhanBridge.clearCredentials();
+  else setStatus('Credentials cleared in form.', true);
 }
 
 window.onExpiryResponse = (ok, text) => {
@@ -409,20 +426,29 @@ function computePrevDayOHLC() {
 }
 
 function computeInitialBalance() {
-  // First 60 minutes of the latest IST session (09:15–10:15)
+  // NSE F&O session IB: first 60 minutes 09:15–10:15 IST (exchange time)
   if (!history.length) return null;
-  let lastDay = istParts(history[history.length - 1].time).day;
-  let ibBars = history.filter(c => {
+  // Prefer latest trading day that has bars inside regular session 09:15–15:30 IST
+  let sessionDays = {};
+  history.forEach(c => {
     let p = istParts(c.time);
-    if (p.day !== lastDay) return false;
     let mins = p.hour * 60 + p.minute;
-    // 09:15 = 555, 10:15 = 615
-    return mins >= 555 && mins < 615;
+    if (mins >= 555 && mins <= 930) { // 09:15–15:30
+      if (!sessionDays[p.day]) sessionDays[p.day] = [];
+      sessionDays[p.day].push(c);
+    }
+  });
+  let days = Object.keys(sessionDays).sort();
+  if (!days.length) return null;
+  let lastDay = days[days.length - 1];
+  let ibBars = sessionDays[lastDay].filter(c => {
+    let p = istParts(c.time);
+    let mins = p.hour * 60 + p.minute;
+    return mins >= 555 && mins < 615; // 09:15 inclusive to 10:15 exclusive
   });
   if (!ibBars.length) {
-    // fallback: first 12 bars of last day if interval is 5m, etc.
-    let dayBars = history.filter(c => istParts(c.time).day === lastDay);
-    if (!dayBars.length) return null;
+    // fallback: first hour worth of session bars by interval
+    let dayBars = sessionDays[lastDay].slice().sort((a, b) => a.time - b.time);
     let intervalMin = Number(document.getElementById('interval').value) || 5;
     let n = Math.max(1, Math.ceil(60 / intervalMin));
     ibBars = dayBars.slice(0, n);
@@ -716,11 +742,40 @@ function initChart() {
     setStatus('Chart library failed to load (network).', false);
     return;
   }
+  function fmtIst(ts) {
+    // ts is UTCTimestamp (seconds)
+    let d = new Date(ts * 1000);
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).format(d);
+  }
+  function tickIst(ts) {
+    let d = new Date(ts * 1000);
+    let parts = {};
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(d).forEach(p => { if (p.type !== 'literal') parts[p.type] = p.value; });
+    // show time during session day, date at day boundary
+    if (parts.hour === '09' && parts.minute === '15') return parts.day + ' ' + parts.month;
+    return parts.hour + ':' + parts.minute;
+  }
   chart = LightweightCharts.createChart(el, {
     layout: { background: { color: '#0f1826' }, textColor: '#b8c4d8', fontSize: 10 },
     grid: { vertLines: { color: '#1a2738' }, horzLines: { color: '#1a2738' } },
     rightPriceScale: { borderColor: '#2a3a50', scaleMargins: { top: 0.06, bottom: 0.06 } },
-    timeScale: { borderColor: '#2a3a50', timeVisible: true },
+    timeScale: {
+      borderColor: '#2a3a50',
+      timeVisible: true,
+      secondsVisible: false,
+      tickMarkFormatter: (time) => tickIst(time)
+    },
+    localization: {
+      locale: 'en-IN',
+      timeFormatter: (time) => fmtIst(time)
+    },
     width: el.clientWidth || 240,
     height: CHART_H
   });

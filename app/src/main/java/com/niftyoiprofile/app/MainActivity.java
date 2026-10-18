@@ -1,6 +1,7 @@
 package com.niftyoiprofile.app;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -51,10 +52,41 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         webView.addJavascriptInterface(new DhanBridge(), "DhanBridge");
-        webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                injectSavedCredentials();
+            }
+        });
         setContentView(webView);
+        // restore native-side credentials early so API calls work after reload
+        SharedPreferences prefs = getSharedPreferences("dhan_creds", MODE_PRIVATE);
+        clientId = prefs.getString("client_id", "");
+        accessToken = prefs.getString("access_token", "");
         webView.loadUrl("file:///android_asset/index.html");
+    }
+
+    private void injectSavedCredentials() {
+        SharedPreferences prefs = getSharedPreferences("dhan_creds", MODE_PRIVATE);
+        String cid = prefs.getString("client_id", "");
+        String token = prefs.getString("access_token", "");
+        if (cid == null) cid = "";
+        if (token == null) token = "";
+        try {
+            JSONObject o = new JSONObject();
+            o.put("clientId", cid);
+            o.put("accessToken", token);
+            js("window.onSavedCredentials && window.onSavedCredentials(" + o.toString() + ")");
+        } catch (Exception ignored) {}
+    }
+
+    private void saveCredentials(String cid, String token) {
+        SharedPreferences.Editor ed = getSharedPreferences("dhan_creds", MODE_PRIVATE).edit();
+        ed.putString("client_id", cid != null ? cid : "");
+        ed.putString("access_token", token != null ? token : "");
+        ed.apply();
     }
 
     private void js(String script) {
@@ -108,8 +140,17 @@ public class MainActivity extends Activity {
             }
             clientId = cid.trim();
             accessToken = token.trim();
-            status("Credentials held in memory. Requesting expiry list…", true);
+            saveCredentials(clientId, accessToken);
+            status("Credentials saved on device. Requesting expiry list…", true);
             fetchExpiries();
+        }
+
+        @JavascriptInterface
+        public void clearCredentials() {
+            clientId = "";
+            accessToken = "";
+            saveCredentials("", "");
+            status("Saved credentials cleared.", true);
         }
 
         @JavascriptInterface
