@@ -158,7 +158,6 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        @JavascriptInterface
         public void setUnderlying(String scrip, String seg, String optExchange, String instrument) {
             try {
                 underlyingScrip = Integer.parseInt(scrip.trim());
