@@ -54,6 +54,21 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 .sw input{width:auto;margin:0 4px 0 0;padding:0}
 .note{font-size:10px;color:var(--muted);margin:0 8px 12px;line-height:1.45}
 .toggle-btn{font-size:10px;padding:4px 8px;margin:0;width:auto;background:#152030}
+
+.search-wrap{position:relative;margin-bottom:6px}
+.search-wrap input{margin-bottom:0}
+.sym-results{max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#0a1422;display:none;margin-top:4px}
+.sym-results.open{display:block}
+.sym-item{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px}
+.sym-item:active,.sym-item:hover{background:#1a3a5c}
+.sym-item small{color:var(--muted);display:block;font-size:10px}
+.chip-row{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;padding:4px 0 8px;-webkit-overflow-scrolling:touch}
+.chip{flex:0 0 auto;padding:7px 12px;border-radius:16px;border:1px solid var(--line);background:#0a1422;color:var(--text);font-size:11px;font-weight:600}
+.chip.on{background:#1a3a5c;border-color:#5b9fff;color:#fff}
+.chip.ce.on{background:#0d3d32;border-color:var(--green)}
+.chip.pe.on{background:#4a2028;border-color:var(--red)}
+.selected-sym{font-size:11px;color:var(--green);margin:4px 0 8px;min-height:16px}
+.step-label{font-size:10px;color:var(--muted);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em}
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -77,37 +92,43 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 </details>
 
 <details class="setup" open id="contractPanel">
-  <summary>📈 Option load · contract</summary>
+  <summary>📈 Option load · one-tap flow</summary>
   <div class="setup-body">
-    <label>Underlying / symbol</label>
-    <select id="underlying" onchange="onUnderlyingChange()"></select>
+    <div class="step-label">1 · Symbol</div>
+    <div class="search-wrap">
+      <input id="symSearch" type="search" autocomplete="off" placeholder="Search NIFTY, BANKNIFTY, RELIANCE…" oninput="filterSymbols()" onfocus="filterSymbols()">
+      <div class="sym-results" id="symResults"></div>
+    </div>
+    <div class="selected-sym" id="selectedSymLabel">No symbol selected</div>
     <div id="customUnderlying" style="display:none">
-      <label>Custom underlying security ID (NSE equity ID for stocks)</label>
-      <input id="customScrip" inputmode="numeric" placeholder="e.g. 2885 for RELIANCE">
-      <label>Underlying segment</label>
+      <label>Custom underlying security ID</label>
+      <input id="customScrip" inputmode="numeric" placeholder="e.g. 2885">
+      <label>Segment</label>
       <select id="customSeg">
         <option value="NSE_EQ">NSE_EQ (stock F&amp;O)</option>
-        <option value="IDX_I">IDX_I (NSE index)</option>
-        <option value="IDX_B">IDX_B (BSE index)</option>
+        <option value="IDX_I">IDX_I (NSE/BSE index)</option>
       </select>
+      <button class="sec" type="button" onclick="applyCustomUnderlying()">Use custom ID</button>
     </div>
-    <button class="sec" type="button" onclick="loadExpiriesForSelected()">Load expiries for symbol</button>
-    <label>Expiry</label>
-    <select id="expiry"><option value="">—</option></select>
-    <button class="sec" onclick="loadChain()">Load option chain</button>
+
+    <div class="step-label">2 · Expiry (Dhan chain)</div>
+    <div class="chip-row" id="expiryChips"><span style="color:#8fa0b8;font-size:11px;padding:6px">Select symbol first</span></div>
+    <select id="expiry" style="display:none"><option value="">—</option></select>
+
+    <div class="step-label">3 · Side</div>
+    <div class="chip-row">
+      <button type="button" class="chip ce on" id="chipCe" onclick="setSide('ce')">CE</button>
+      <button type="button" class="chip pe" id="chipPe" onclick="setSide('pe')">PE</button>
+    </div>
+    <select id="side" style="display:none"><option value="ce" selected>CE</option><option value="pe">PE</option></select>
+
+    <div class="step-label">4 · Strike</div>
+    <div class="chip-row" id="strikeChips"><span style="color:#8fa0b8;font-size:11px;padding:6px">Load chain after expiry</span></div>
+    <select id="strike" style="display:none"><option value="">—</option></select>
+
+    <div class="step-label">5 · Interval · bucket</div>
     <div class="grid2">
       <div>
-        <label>Strike</label>
-        <select id="strike"><option value="">—</option></select>
-      </div>
-      <div>
-        <label>Side</label>
-        <select id="side"><option value="ce">CE</option><option value="pe">PE</option></select>
-      </div>
-    </div>
-    <div class="grid2">
-      <div>
-        <label>Interval</label>
         <select id="interval">
           <option value="1">1m</option>
           <option value="5" selected>5m</option>
@@ -116,7 +137,6 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
         </select>
       </div>
       <div>
-        <label>Premium bucket</label>
         <select id="bucket">
           <option value="1">₹1</option>
           <option value="2">₹2</option>
@@ -125,9 +145,11 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
         </select>
       </div>
     </div>
-    <button onclick="startContract()">Load candles + live feed</button>
+
+    <button onclick="startContract()">Load candles + live OI</button>
     <button class="sec" onclick="disconnect()">Disconnect live feed</button>
     <div class="status" id="contractInfo"></div>
+    <p class="note" style="margin:8px 0 0">Dhan Data API: option-chain / expiry ≤1 unique request / 3s. OI table stays below chart.</p>
   </div>
 </details>
 
@@ -419,25 +441,133 @@ const UNDERLYINGS = [
 
 let currentUnderlying = UNDERLYINGS[0];
 
-function populateUnderlyingSelect() {
-  let s = document.getElementById('underlying');
-  if (!s) { console.warn('underlying select missing'); return; }
-  s.innerHTML = '';
-  if (!UNDERLYINGS || !UNDERLYINGS.length) {
-    let o = document.createElement('option');
-    o.value = 'NIFTY'; o.textContent = 'NIFTY (fallback)';
-    s.appendChild(o);
+let selectedUnderlyingId = 'NIFTY';
+let lastChainAt = 0; // Dhan option-chain rate limit helper (3s)
+
+function filterSymbols() {
+  let q = (document.getElementById('symSearch').value || '').trim().toUpperCase();
+  let box = document.getElementById('symResults');
+  if (!box) return;
+  let list = UNDERLYINGS.filter(u => {
+    if (u.id === 'CUSTOM') return q === '' || 'CUSTOM'.indexOf(q) >= 0;
+    return !q || u.id.indexOf(q) >= 0 || (u.label || '').toUpperCase().indexOf(q) >= 0;
+  }).slice(0, 40);
+  if (!list.length) {
+    box.innerHTML = '<div class="sym-item">No match</div>';
+    box.classList.add('open');
     return;
   }
-  UNDERLYINGS.forEach((u, i) => {
-    let o = document.createElement('option');
-    o.value = u.id;
-    o.textContent = u.label;
-    if (u.id === 'NIFTY') o.selected = true;
-    s.appendChild(o);
+  box.innerHTML = list.map(u =>
+    '<div class="sym-item" onclick="selectSymbol(\'' + u.id + '\')"><b>' + u.id + '</b><small>' + u.label + '</small></div>'
+  ).join('');
+  box.classList.add('open');
+}
+
+function selectSymbol(id) {
+  selectedUnderlyingId = id;
+  let u = UNDERLYINGS.find(x => x.id === id);
+  document.getElementById('symResults').classList.remove('open');
+  document.getElementById('symSearch').value = u ? u.id : id;
+  document.getElementById('selectedSymLabel').textContent = u ? u.label : id;
+  document.getElementById('customUnderlying').style.display = id === 'CUSTOM' ? 'block' : 'none';
+  document.getElementById('expiryChips').innerHTML = '<span style="color:#8fa0b8;font-size:11px;padding:6px">Loading expiries…</span>';
+  document.getElementById('strikeChips').innerHTML = '<span style="color:#8fa0b8;font-size:11px;padding:6px">Pick expiry next</span>';
+  document.getElementById('expiry').innerHTML = '<option value="">—</option>';
+  document.getElementById('strike').innerHTML = '<option value="">—</option>';
+  chain = null;
+  if (id !== 'CUSTOM') loadExpiriesForSelected();
+}
+
+function applyCustomUnderlying() {
+  selectedUnderlyingId = 'CUSTOM';
+  loadExpiriesForSelected();
+}
+
+
+
+function setSide(side) {
+  document.getElementById('side').value = side;
+  document.getElementById('chipCe').classList.toggle('on', side === 'ce');
+  document.getElementById('chipPe').classList.toggle('on', side === 'pe');
+  renderStrikeChips();
+}
+
+function setExpiryChip(exp) {
+  document.getElementById('expiry').value = exp;
+  Array.from(document.querySelectorAll('#expiryChips .chip')).forEach(c => {
+    c.classList.toggle('on', c.dataset.exp === exp);
   });
-  // ensure first selected if NIFTY missing
-  if (s.selectedIndex < 0) s.selectedIndex = 0;
+  // auto load chain (Dhan rate limit: wait 3s if needed)
+  loadChain();
+}
+
+function setStrikeChip(strike) {
+  document.getElementById('strike').value = strike;
+  Array.from(document.querySelectorAll('#strikeChips .chip')).forEach(c => {
+    c.classList.toggle('on', c.dataset.strike === String(strike));
+  });
+}
+
+function renderExpiryChips(list) {
+  let row = document.getElementById('expiryChips');
+  if (!list || !list.length) {
+    row.innerHTML = '<span style="color:#8fa0b8;font-size:11px;padding:6px">No expiries</span>';
+    return;
+  }
+  row.innerHTML = list.map((x, i) => {
+    let label = x;
+    try {
+      let d = new Date(x + 'T00:00:00');
+      label = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+    } catch (e) {}
+    return '<button type="button" class="chip' + (i === 0 ? ' on' : '') + '" data-exp="' + x + '" onclick="setExpiryChip(\'' + x + '\')">' + label + '</button>';
+  }).join('');
+  document.getElementById('expiry').innerHTML = list.map((x, i) =>
+    '<option value="' + x + '"' + (i === 0 ? ' selected' : '') + '>' + x + '</option>'
+  ).join('');
+}
+
+function renderStrikeChips() {
+  let row = document.getElementById('strikeChips');
+  if (!chain) {
+    row.innerHTML = '<span style="color:#8fa0b8;font-size:11px;padding:6px">Load chain after expiry</span>';
+    return;
+  }
+  let keys = Object.keys(chain).map(Number).filter(isFinite).sort((a, b) => a - b);
+  if (!keys.length) {
+    row.innerHTML = '<span style="color:#8fa0b8;font-size:11px;padding:6px">No strikes</span>';
+    return;
+  }
+  // ATM ~ middle of chain or closest to spot if available
+  let mid = keys[Math.floor(keys.length / 2)];
+  let cur = document.getElementById('strike').value;
+  if (!cur) cur = String(mid);
+  // show window around ATM for usability
+  let idx = keys.indexOf(Number(cur));
+  if (idx < 0) idx = Math.floor(keys.length / 2);
+  let from = Math.max(0, idx - 8);
+  let to = Math.min(keys.length, idx + 9);
+  let view = keys.slice(from, to);
+  row.innerHTML = view.map(k => {
+    let on = String(k) === String(cur) ? ' on' : '';
+    return '<button type="button" class="chip' + on + '" data-strike="' + k + '" onclick="setStrikeChip(\'' + k + '\')">' + k + '</button>';
+  }).join('');
+  document.getElementById('strike').innerHTML = keys.map(k =>
+    '<option value="' + k + '"' + (String(k) === String(cur) ? ' selected' : '') + '>' + k + '</option>'
+  ).join('');
+  document.getElementById('strike').value = cur;
+}
+
+
+function populateUnderlyingSelect() {
+  // one-tap flow uses search; preselect NIFTY
+  selectedUnderlyingId = 'NIFTY';
+  let u = UNDERLYINGS.find(x => x.id === 'NIFTY') || UNDERLYINGS[0];
+  currentUnderlying = u;
+  let lab = document.getElementById('selectedSymLabel');
+  let search = document.getElementById('symSearch');
+  if (lab && u) lab.textContent = u.label;
+  if (search && u) search.value = u.id;
 }
 
 function resolveUnderlying() {
@@ -519,16 +649,30 @@ window.onExpiryResponse = (ok, text) => {
   if (!ok) { setStatus(text, false); return; }
   try {
     let j = JSON.parse(text), a = j.data || [];
-    let s = document.getElementById('expiry');
-    s.innerHTML = '';
-    a.forEach(x => { let o = document.createElement('option'); o.value = x; o.textContent = x; s.appendChild(o); });
-    setStatus('Expiries loaded (' + a.length + '). Load option chain.', true);
+    if (!Array.isArray(a)) a = [];
+    renderExpiryChips(a);
+    setStatus('Expiries loaded (' + a.length + ') for ' + (currentUnderlying && currentUnderlying.label ? currentUnderlying.label : 'symbol') + '. Tap an expiry.', true);
+    if (a.length) {
+      // auto-select nearest expiry and load chain (respect rate limit lightly)
+      setTimeout(() => setExpiryChip(a[0]), 350);
+    }
   } catch (e) { setStatus('Expiry parse error: ' + e, false); }
 };
 
 function loadChain() {
   let expiry = document.getElementById('expiry').value;
   if (!expiry) { setStatus('Select expiry first.', false); return; }
+  // Dhan Data API guideline: option chain ~1 unique request / 3 seconds
+  let wait = 3000 - (Date.now() - (lastChainAt || 0));
+  if (wait > 0 && lastChainAt) {
+    setStatus('Dhan rate limit: waiting ' + Math.ceil(wait / 1000) + 's…', true);
+    setTimeout(() => {
+      lastChainAt = Date.now();
+      DhanBridge.fetchChain(expiry);
+    }, wait);
+    return;
+  }
+  lastChainAt = Date.now();
   DhanBridge.fetchChain(expiry);
 }
 
@@ -537,17 +681,13 @@ window.onChainResponse = (ok, text) => {
   try {
     let j = JSON.parse(text);
     chain = (j.data && j.data.oc) || j.oc || {};
-    let s = document.getElementById('strike');
-    s.innerHTML = '';
-    let keys = Object.keys(chain).sort((a, b) => Number(a) - Number(b));
-    keys.forEach(k => {
-      let o = document.createElement('option');
-      o.value = k; o.textContent = k;
-      s.appendChild(o);
-    });
+    let keys = Object.keys(chain).map(Number).filter(isFinite).sort((a, b) => a - b);
     if (!keys.length) { setStatus('Chain empty.', false); return; }
-    s.selectedIndex = Math.floor(keys.length / 2);
-    setStatus('Chain loaded · ' + keys.length + ' strikes.', true);
+    let mid = keys[Math.floor(keys.length / 2)];
+    document.getElementById('strike').value = String(mid);
+    renderStrikeChips();
+    lastChainAt = Date.now();
+    setStatus('Chain loaded · ' + keys.length + ' strikes · ATM ~ ' + mid + '. Pick strike → Load candles.', true);
   } catch (e) { setStatus('Chain parse error: ' + e, false); }
 };
 
@@ -1102,6 +1242,13 @@ function initChart() {
 
 function boot() {
   try { populateUnderlyingSelect(); } catch (e) { console.error(e); }
+  document.addEventListener('click', function(ev) {
+    let w = document.querySelector('.search-wrap');
+    if (w && !w.contains(ev.target)) {
+      let b = document.getElementById('symResults');
+      if (b) b.classList.remove('open');
+    }
+  });
   initChart();
 }
 if (document.readyState === 'loading') {
