@@ -158,7 +158,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <label class="sw"><input id="pdOn" type="checkbox" checked>Prev day OHLC</label>
   <label class="sw"><input id="ibOn" type="checkbox" checked>IB 1st hour</label>
   <label class="sw"><input id="pocOn" type="checkbox" checked>OI POC (latest)</label>
-  <label class="sw"><input id="oiZoneOn" type="checkbox" checked>Big OI increase</label>
+  <label class="sw"><input id="oiZoneOn" type="checkbox" checked>Max turnover</label>
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
@@ -172,6 +172,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     <thead><tr>
       <th class="sortable" data-sort="premium" onclick="onSortHeader('premium')">Premium range<span class="arrow" id="arr-premium"></span></th>
       <th class="sortable" data-sort="oi" onclick="onSortHeader('oi')">OI generated<span class="arrow" id="arr-oi"></span></th>
+      <th class="sortable" data-sort="turnover" onclick="onSortHeader('turnover')">Turnover<span class="arrow" id="arr-turnover"></span></th>
       <th>% of total</th>
       <th class="sortable" data-sort="time" onclick="onSortHeader('time')">Last time<span class="arrow" id="arr-time"></span></th>
     </tr></thead>
@@ -816,7 +817,7 @@ function onSortHeader(col) {
 }
 
 function updateSortArrows() {
-  ['premium', 'oi', 'time'].forEach(c => {
+  ['premium', 'oi', 'turnover', 'time'].forEach(c => {
     let el = document.getElementById('arr-' + c);
     if (!el) return;
     el.textContent = (c === tableSortBy) ? (tableSortDir === 'asc' ? ' ↑' : ' ↓') : '';
@@ -923,15 +924,15 @@ function recalcOverlays() {
 
 function drawProfile() {
   let built = buildBins();
-  let bins = built.bins, lastTime = built.lastTime || {}, bucket = built.bucket;
-  let metric = built.metric, fallback = built.fallback;
+  let bins = built.bins, turnover = built.turnover || {}, lastTime = built.lastTime || {};
+  let bucket = built.bucket, metric = built.metric, fallback = built.fallback;
   let keys = Object.keys(bins).map(Number).filter(k => isFinite(k) && bins[k] !== 0);
   let tbody = document.getElementById('oiTable');
   let showTable = document.getElementById('showTable').checked;
   document.getElementById('tableCard').classList.toggle('hidden', !showTable);
 
   if (!keys.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#8fa0b8">No premium/OI samples yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8fa0b8">No premium/OI samples yet</td></tr>';
     document.getElementById('poc').textContent = '—';
     document.getElementById('profiletitle').textContent = 'WAITING DATA';
     paintCanvasEmpty();
@@ -940,39 +941,52 @@ function drawProfile() {
 
   let total = keys.reduce((s, k) => s + Math.abs(bins[k]), 0) || 1;
   let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
+  // highest turnover premium (for metric display)
+  let tKeys = keys.filter(k => (turnover[k] || 0) > 0);
+  let bestTO = tKeys.length
+    ? tKeys.reduce((a, b) => turnover[b] > turnover[a] ? b : a, tKeys[0])
+    : best;
   document.getElementById('poc').textContent = '₹' + best;
   let modeLabel = metric === 'oi' ? 'OI LEVEL' : metric === 'doi_up' ? 'OI UP' : metric === 'doi_down' ? 'OI DOWN' : 'ΔOI ±';
-  document.getElementById('profiletitle').textContent = modeLabel + ' · POC ₹' + best;
+  document.getElementById('profiletitle').textContent = modeLabel + ' · POC ₹' + best + ' · Max TO ₹' + bestTO;
 
   let sortBy = tableSortBy || 'premium';
   let sortDir = tableSortDir || 'desc';
   let mult = sortDir === 'asc' ? 1 : -1;
   let sorted = keys.slice();
   if (sortBy === 'oi') sorted.sort((a, b) => mult * (bins[a] - bins[b]));
+  else if (sortBy === 'turnover') sorted.sort((a, b) => mult * ((turnover[a] || 0) - (turnover[b] || 0)));
   else if (sortBy === 'time') sorted.sort((a, b) => mult * ((lastTime[a] || 0) - (lastTime[b] || 0)));
   else sorted.sort((a, b) => mult * (a - b));
   updateSortArrows();
 
+  function fmtTO(v) {
+    v = Math.round(v || 0);
+    if (Math.abs(v) >= 1e7) return (v / 1e7).toFixed(2) + ' Cr';
+    if (Math.abs(v) >= 1e5) return (v / 1e5).toFixed(2) + ' L';
+    return v.toLocaleString('en-IN');
+  }
+
   tbody.innerHTML = sorted.map(p => {
     let n = Math.round(bins[p]);
+    let to = turnover[p] || 0;
     let rawPct = Math.abs(bins[p]) / total * 100;
     let pct = rawPct >= 0.1 ? rawPct.toFixed(1) : (rawPct > 0 ? rawPct.toFixed(2) : '0');
     let isPoc = p === best;
+    let isTO = p === bestTO;
     let isDown = n < 0;
     let cls = isPoc ? ' class="poc"' : (isDown ? ' class="oi-down"' : (n > 0 ? ' class="oi-up"' : ''));
-    // always show sign for Δ modes so increase AND decrease stay visible
     let sign = '';
     if (metric !== 'oi') {
       if (n > 0) sign = '+';
-      else if (n < 0) sign = ''; // number already has minus
     }
     let when = formatIstTime(lastTime[p]);
+    let toStyle = isTO ? 'color:#ffc857;font-weight:700' : 'color:#b8c4d8';
     return '<tr' + cls + '><td>₹' + p + ' – ' + (p + bucket) + '</td><td>' +
-      sign + n.toLocaleString('en-IN') + '</td><td>' + pct + '%</td>' +
+      sign + n.toLocaleString('en-IN') + '</td><td style="' + toStyle + '">' + fmtTO(to) + '</td><td>' + pct + '%</td>' +
       '<td style="white-space:nowrap;color:#8fa0b8;font-size:10px">' + when + '</td></tr>';
   }).join('');
 
-  // Option 4 side panel: only top key levels as short bars
   paintKeyLevels(bins, keys, bucket, best);
 }
 

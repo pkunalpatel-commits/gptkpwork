@@ -8,8 +8,8 @@ android {
         applicationId 'com.niftyoiprofile.app'
         minSdk 24
         targetSdk 35
-        versionCode 25
-        versionName '2.2.2'
+        versionCode 26
+        versionName '2.3.0'
     }
 }
 dependencies {
