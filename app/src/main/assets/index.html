@@ -61,6 +61,11 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 .replay-bar input[type=range]{flex:1;min-width:120px;margin:0;padding:0;height:28px}
 .replay-bar .tlabel{font-size:10px;color:var(--muted);min-width:72px}
 .replay-bar select{width:auto;margin:0;padding:4px 6px;font-size:11px}
+
+.strike-results{max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#0a1422;margin-top:4px}
+.strike-item{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px;font-weight:600}
+.strike-item:active,.strike-item.on{background:#1a3a5c;color:#1ecf9a}
+.strike-empty{padding:10px;color:var(--muted);font-size:12px}
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -105,8 +110,11 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     <button class="sec" onclick="loadChain()">Load option chain</button>
     <div class="grid2">
       <div>
-        <label>Strike</label>
-        <select id="strike"><option value="">—</option></select>
+        <label>Strike · type to search</label>
+        <input id="strikeSearch" type="search" inputmode="decimal" autocomplete="off"
+          placeholder="Type strike e.g. 2400" oninput="filterStrikeList()">
+        <input type="hidden" id="strike" value="">
+        <div class="strike-results" id="strikeResults"><div class="strike-empty">Load option chain first</div></div>
       </div>
       <div>
         <label>Side</label>
@@ -589,45 +597,51 @@ window.onChainResponse = (ok, text) => {
     let mid = window._allStrikes[Math.floor(window._allStrikes.length / 2)];
     let ss = document.getElementById('strikeSearch');
     if (ss) ss.value = '';
-    filterStrikeSelect(String(mid));
+    pickStrike(mid);
     setStatus('Chain loaded · ' + window._allStrikes.length + ' strikes. Search or pick strike.', true);
   } catch (e) { setStatus('Chain parse error: ' + e, false); }
 };
 
-function filterStrikeSelect(preferSelect) {
-  let s = document.getElementById('strike');
-  if (!s) return;
+function filterStrikeList(preferSelect) {
+  let box = document.getElementById('strikeResults');
+  let hid = document.getElementById('strike');
+  if (!box) return;
   let all = window._allStrikes || [];
   let q = ((document.getElementById('strikeSearch') || {}).value || '').trim();
   let list = all;
-  if (q) {
-    list = all.filter(k => String(k).indexOf(q) >= 0);
-  }
-  let prev = preferSelect != null ? String(preferSelect) : s.value;
-  s.innerHTML = '';
+  if (q) list = all.filter(k => String(k).indexOf(q) >= 0);
+  let cur = preferSelect != null ? String(preferSelect) : (hid ? hid.value : '');
   if (!list.length) {
-    let o = document.createElement('option');
-    o.value = ''; o.textContent = 'No match';
-    s.appendChild(o);
+    box.innerHTML = '<div class="strike-empty">' + (all.length ? 'No match for "' + q + '"' : 'Load option chain first') + '</div>';
     return;
   }
-  list.forEach(k => {
-    let o = document.createElement('option');
-    o.value = String(k);
-    o.textContent = String(k);
-    s.appendChild(o);
-  });
-  if (prev && list.some(k => String(k) === String(prev))) {
-    s.value = String(prev);
-  } else if (!q && all.length) {
-    // default ATM-ish middle of full list if visible
-    let mid = all[Math.floor(all.length / 2)];
-    if (list.some(k => k === mid)) s.value = String(mid);
-    else s.selectedIndex = Math.floor(list.length / 2);
-  } else {
-    s.selectedIndex = 0;
+  // show up to 40 matches for performance
+  let view = list.slice(0, 40);
+  box.innerHTML = view.map(k => {
+    let on = String(k) === String(cur) ? ' on' : '';
+    return '<div class="strike-item' + on + '" onclick="pickStrike('' + k + '')">' + k + '</div>';
+  }).join('');
+  if (list.length > 40) {
+    box.innerHTML += '<div class="strike-empty">+' + (list.length - 40) + ' more — refine search</div>';
+  }
+  // auto-select prefer or first match when searching exact
+  if (preferSelect != null && list.some(k => String(k) === String(preferSelect))) {
+    if (hid) hid.value = String(preferSelect);
+  } else if (q && list.length === 1) {
+    pickStrike(list[0]);
   }
 }
+
+function pickStrike(k) {
+  let hid = document.getElementById('strike');
+  if (hid) hid.value = String(k);
+  let ss = document.getElementById('strikeSearch');
+  if (ss) ss.value = String(k);
+  filterStrikeList(String(k));
+}
+
+// legacy name used by chain callback
+function filterStrikeSelect(preferSelect) { filterStrikeList(preferSelect); }
 
 
 function startContract() {
