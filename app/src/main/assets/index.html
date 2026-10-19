@@ -580,19 +580,55 @@ window.onChainResponse = (ok, text) => {
   try {
     let j = JSON.parse(text);
     chain = (j.data && j.data.oc) || j.oc || {};
-    let s = document.getElementById('strike');
-    s.innerHTML = '';
-    let keys = Object.keys(chain).sort((a, b) => Number(a) - Number(b));
-    keys.forEach(k => {
-      let o = document.createElement('option');
-      o.value = k; o.textContent = k;
-      s.appendChild(o);
-    });
-    if (!keys.length) { setStatus('Chain empty.', false); return; }
-    s.selectedIndex = Math.floor(keys.length / 2);
-    setStatus('Chain loaded · ' + keys.length + ' strikes.', true);
+    window._allStrikes = Object.keys(chain).map(Number).filter(isFinite).sort((a, b) => a - b);
+    if (!window._allStrikes.length) {
+      document.getElementById('strike').innerHTML = '<option value="">—</option>';
+      setStatus('Chain empty.', false);
+      return;
+    }
+    let mid = window._allStrikes[Math.floor(window._allStrikes.length / 2)];
+    let ss = document.getElementById('strikeSearch');
+    if (ss) ss.value = '';
+    filterStrikeSelect(String(mid));
+    setStatus('Chain loaded · ' + window._allStrikes.length + ' strikes. Search or pick strike.', true);
   } catch (e) { setStatus('Chain parse error: ' + e, false); }
 };
+
+function filterStrikeSelect(preferSelect) {
+  let s = document.getElementById('strike');
+  if (!s) return;
+  let all = window._allStrikes || [];
+  let q = ((document.getElementById('strikeSearch') || {}).value || '').trim();
+  let list = all;
+  if (q) {
+    list = all.filter(k => String(k).indexOf(q) >= 0);
+  }
+  let prev = preferSelect != null ? String(preferSelect) : s.value;
+  s.innerHTML = '';
+  if (!list.length) {
+    let o = document.createElement('option');
+    o.value = ''; o.textContent = 'No match';
+    s.appendChild(o);
+    return;
+  }
+  list.forEach(k => {
+    let o = document.createElement('option');
+    o.value = String(k);
+    o.textContent = String(k);
+    s.appendChild(o);
+  });
+  if (prev && list.some(k => String(k) === String(prev))) {
+    s.value = String(prev);
+  } else if (!q && all.length) {
+    // default ATM-ish middle of full list if visible
+    let mid = all[Math.floor(all.length / 2)];
+    if (list.some(k => k === mid)) s.value = String(mid);
+    else s.selectedIndex = Math.floor(list.length / 2);
+  } else {
+    s.selectedIndex = 0;
+  }
+}
+
 
 function startContract() {
   if (!chain) { setStatus('Load option chain first.', false); return; }
