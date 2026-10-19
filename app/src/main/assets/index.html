@@ -862,8 +862,16 @@ function buildBins() {
     let t = Number(s.time) || 0;
     if (t && (!lastTime[p] || t > lastTime[p])) lastTime[p] = t;
   });
-  // do not auto-fallback away from ΔOI; zeros mean no change at that premium
-  return { bins, lastTime, bucket, metric, fallback: false };
+  // Turnover = |OI activity in bin| × bucket mid premium
+  let turnover = {};
+  Object.keys(bins).forEach(function(k) {
+    let p = Number(k);
+    if (!isFinite(p)) return;
+    let mid = p + bucket / 2;
+    let oiVal = Number(bins[k]) || 0;
+    turnover[p] = Math.abs(oiVal) * mid;
+  });
+  return { bins, turnover, lastTime, bucket, metric, fallback: false };
 }
 
 function recalcOverlays() {
@@ -924,8 +932,16 @@ function recalcOverlays() {
 
 function drawProfile() {
   let built = buildBins();
-  let bins = built.bins, turnover = built.turnover || {}, lastTime = built.lastTime || {};
-  let bucket = built.bucket, metric = built.metric, fallback = built.fallback;
+  let bins = built.bins, lastTime = built.lastTime || {};
+  let bucket = built.bucket || 5, metric = built.metric, fallback = built.fallback;
+  let turnover = built.turnover || {};
+  // safety: if turnover missing/empty, compute from bins
+  if (!Object.keys(turnover).length && bins) {
+    Object.keys(bins).forEach(function(k) {
+      let p = Number(k);
+      turnover[p] = Math.abs(Number(bins[k]) || 0) * (p + bucket / 2);
+    });
+  }
   let keys = Object.keys(bins).map(Number).filter(k => isFinite(k) && bins[k] !== 0);
   let tbody = document.getElementById('oiTable');
   let showTable = document.getElementById('showTable').checked;
