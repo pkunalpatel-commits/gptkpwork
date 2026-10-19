@@ -54,6 +54,13 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 .sw input{width:auto;margin:0 4px 0 0;padding:0}
 .note{font-size:10px;color:var(--muted);margin:0 8px 12px;line-height:1.45}
 .toggle-btn{font-size:10px;padding:4px 8px;margin:0;width:auto;background:#152030}
+
+.replay-bar{margin:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.replay-bar .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.replay-bar button{width:auto;margin:0;padding:6px 10px;font-size:11px}
+.replay-bar input[type=range]{flex:1;min-width:120px;margin:0;padding:0;height:28px}
+.replay-bar .tlabel{font-size:10px;color:var(--muted);min-width:72px}
+.replay-bar select{width:auto;margin:0;padding:4px 6px;font-size:11px}
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -152,13 +159,29 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   </div>
 </div>
 
+<div class="replay-bar" id="replayBar">
+  <div class="row">
+    <button type="button" id="btnReplayPlay" onclick="toggleReplay()">▶ Replay</button>
+    <select id="replaySpeed" onchange="onReplaySpeedChange()">
+      <option value="1">1x</option>
+      <option value="2" selected>2x</option>
+      <option value="5">5x</option>
+      <option value="10">10x</option>
+    </select>
+    <input type="range" id="replaySlider" min="0" max="0" value="0" oninput="onReplayScrub()">
+    <span class="tlabel" id="replayTime">—</span>
+    <button type="button" class="sec" onclick="exitReplay()">Live</button>
+  </div>
+</div>
+
 <div class="swrow">
   <label class="sw"><input id="dailyOn" type="checkbox" checked>Daily VWAP</label>
   <label class="sw"><input id="weeklyOn" type="checkbox" checked>Weekly VWAP</label>
   <label class="sw"><input id="pdOn" type="checkbox" checked>Prev day OHLC</label>
   <label class="sw"><input id="ibOn" type="checkbox" checked>IB 1st hour</label>
   <label class="sw"><input id="pocOn" type="checkbox" checked>OI POC (latest)</label>
-  <label class="sw"><input id="oiZoneOn" type="checkbox" checked>Max turnover</label>
+  <label class="sw"><input id="toTop3On" type="checkbox" checked>Top 3 turnover</label>
+  <label class="sw"><input id="toTicksOn" type="checkbox" checked>TO tick marks</label>
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
@@ -179,11 +202,14 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     <tbody id="oiTable"><tr><td colspan="4" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
-<p class="note">Chart: thick line = latest highest-OI premium (POC). Optional second thick line = largest current OI increase (if different). Old OI levels are not kept on the chart. Table still has full premium vs OI history.</p>
+<p class="note">Replay: scrub or play session; OI table & levels follow time. Chart: optional OI POC + Top 3 turnover lines (with tick marks). Settings auto-saved.</p>
 
 <script>
 let chart, candles, dv, wv, chain = null, selected = null;
 let history = [], lastOi = null, lastLtp = null, profileSamples = [];
+let fullHistory = [], fullProfileSamples = [];
+let replayMode = false, replayPlaying = false, replayTimer = null, replayIdx = 0;
+
 let profileCanvas, profileCtx;
 let levelSeries = []; // prev OHLC, IB, POC, zone
 let showProfilePane = true;
@@ -496,6 +522,7 @@ function loadExpiriesForSelected() {
 
 function toggleOiProfile() {
   showProfilePane = !showProfilePane;
+  try { saveSettings(); } catch (e) {}
   let pane = document.getElementById('profilePane');
   let btn = document.getElementById('btnToggleProfile');
   if (showProfilePane) {
@@ -645,7 +672,11 @@ window.onCandlesResponse = (ok, text) => {
     history.sort((a, b) => a.time - b.time);
     resizeChart();
     candles.setData(history);
+    fullHistory = history.map(c => Object.assign({}, c));
+    // fullProfileSamples filled after seed
     let nOi = seedProfileFromHistory();
+    fullProfileSamples = profileSamples.map(s => Object.assign({}, s));
+    setupReplaySlider();
     recalcOverlays();
     chart.timeScale().fitContent();
     setTimeout(() => { resizeChart(); chart.timeScale().fitContent(); drawProfile(); }, 100);
@@ -657,6 +688,7 @@ window.onCandlesResponse = (ok, text) => {
 
 window.onDhanTick = t => {
   if (!selected) return;
+  if (replayMode && replayPlaying) return; // ignore live while playing replay
   if (t.ltp !== undefined && isFinite(t.ltp)) {
     lastLtp = Number(t.ltp);
     document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
@@ -673,6 +705,11 @@ window.onDhanTick = t => {
       let bar = { time, open: o, high: Math.max(o, lastLtp), low: Math.min(o, lastLtp), close: lastLtp, volume: t.volume || 0, oi: lastOi || 0 };
       candles.update(bar);
       history.push(bar);
+      if (!replayMode) {
+        fullHistory.push(Object.assign({}, bar));
+        if (fullHistory.length > 2000) fullHistory.shift();
+        setupReplaySlider();
+      }
       if (history.length > 2000) history.shift();
       recalcOverlays();
     }
@@ -684,6 +721,10 @@ window.onDhanTick = t => {
     if (price && price > 0) {
       let doi = lastOi === null ? 0 : (oi - lastOi);
       profileSamples.push({ price: price, oi: oi, doi: doi, time: Date.now(), src: 'live' });
+      if (!replayMode) {
+        fullProfileSamples.push({ price: price, oi: oi, doi: doi, time: Date.now(), src: 'live' });
+        if (fullProfileSamples.length > 20000) fullProfileSamples.shift();
+      }
       if (profileSamples.length > 20000) profileSamples.shift();
       if (history.length) history[history.length - 1].oi = oi;
     }
@@ -903,28 +944,29 @@ function recalcOverlays() {
     }
   }
 
-    // Latest-only OI on chart: thick POC + optional big ΔOI increase (no old levels)
-  let { bins, bucket } = buildBins();
+// OI POC + Top 3 turnover lines (from current OI table bins)
+  let built = buildBins();
+  let bins = built.bins, bucket = built.bucket, turnover = built.turnover || {};
   let keys = Object.keys(bins).map(Number).filter(k => bins[k]);
   if (keys.length) {
-    // Highest |OI| / generated at premium (current bins only — old lines cleared above)
     let best = keys.reduce((a, b) => Math.abs(bins[b]) > Math.abs(bins[a]) ? b : a, keys[0]);
-    let pocPrice = best + bucket / 2;
-    if (document.getElementById('pocOn').checked) {
-      addLevel(pocPrice, '#1ecf9a', 'OI POC ₹' + best, 'poc', 0, 3);
+    if (document.getElementById('pocOn') && document.getElementById('pocOn').checked) {
+      addLevel(best, '#1ecf9a', 'OI POC ₹' + best, 'poc', 0, 3);
     }
-    // Biggest positive OI increase among current bins (latest only)
-    let upKeys = keys.filter(k => bins[k] > 0);
-    if (document.getElementById('oiZoneOn') && document.getElementById('oiZoneOn').checked && upKeys.length) {
-      let big = upKeys.reduce((a, b) => bins[b] > bins[a] ? b : a, upKeys[0]);
-      let bigPrice = big + bucket / 2;
-      // only draw second line if different premium from POC
-      if (big !== best) {
-        addLevel(bigPrice, '#ffc857', 'Big OI↑ ₹' + big, 'bigoi', 0, 3);
-      } else if (!document.getElementById('pocOn').checked) {
-        // if POC off but big increase on, still show thick line at that premium
-        addLevel(bigPrice, '#ffc857', 'Big OI↑ ₹' + big, 'bigoi', 0, 3);
-      }
+    let tKeys = keys.filter(k => (turnover[k] || 0) > 0)
+      .sort((a, b) => (turnover[b] || 0) - (turnover[a] || 0));
+    let top3 = tKeys.slice(0, 3);
+    let showTO = document.getElementById('toTop3On') && document.getElementById('toTop3On').checked;
+    let ticks = document.getElementById('toTicksOn') && document.getElementById('toTicksOn').checked;
+    if (showTO && top3.length) {
+      let colors = ['#ffc857', '#e8a838', '#c48920'];
+      top3.forEach(function(p, i) {
+        let title = 'TO' + (i + 1) + ' ₹' + p;
+        // solid for #1, dashed for #2/#3 if ticks off; with ticks use solid + lastValueVisible
+        let style = (i === 0) ? 0 : 2;
+        let w = i === 0 ? 3 : 2;
+        addLevel(p, colors[i], title, 'to' + i, style, w);
+      });
     }
   }
 }
@@ -1080,9 +1122,10 @@ function resizeChart() {
 function onOverlayToggle() {
   recalcOverlays();
   drawProfile();
+  saveSettings();
 }
 
-['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'oiZoneOn', 'bucket', 'showTable'].forEach(id => {
+['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'bucket', 'showTable'].forEach(id => {
   document.getElementById(id).addEventListener('change', onOverlayToggle);
 });
 document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', onOverlayToggle));
@@ -1145,9 +1188,219 @@ function initChart() {
   setTimeout(resizeChart, 50);
 }
 
+
+// ===== Replay (Option A) =====
+function setupReplaySlider() {
+  let sl = document.getElementById('replaySlider');
+  if (!sl || !fullHistory.length) return;
+  sl.min = 0;
+  sl.max = Math.max(0, fullHistory.length - 1);
+  sl.value = fullHistory.length - 1;
+  replayIdx = fullHistory.length - 1;
+  updateReplayTimeLabel();
+}
+
+function updateReplayTimeLabel() {
+  let el = document.getElementById('replayTime');
+  if (!el) return;
+  if (!fullHistory.length) { el.textContent = '—'; return; }
+  let c = fullHistory[Math.min(replayIdx, fullHistory.length - 1)];
+  if (!c) { el.textContent = '—'; return; }
+  try {
+    el.textContent = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).format(new Date(c.time * 1000));
+  } catch (e) { el.textContent = String(c.time); }
+}
+
+function applyReplayAt(idx) {
+  if (!fullHistory.length) return;
+  idx = Math.max(0, Math.min(idx, fullHistory.length - 1));
+  replayIdx = idx;
+  replayMode = true;
+  let sl = document.getElementById('replaySlider');
+  if (sl) sl.value = idx;
+  history = fullHistory.slice(0, idx + 1).map(c => Object.assign({}, c));
+  let cutT = fullHistory[idx].time * 1000;
+  // rebuild OI samples up to this time (hist + any live samples before cut)
+  let base = fullProfileSamples.length ? fullProfileSamples : profileSamples;
+  profileSamples = base.filter(s => (Number(s.time) || 0) <= cutT).map(s => Object.assign({}, s));
+  if (candles) candles.setData(history);
+  if (history.length) {
+    lastLtp = history[history.length - 1].close;
+    document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);
+    if (history[history.length - 1].oi) {
+      lastOi = history[history.length - 1].oi;
+      document.getElementById('oi').textContent = Number(lastOi).toLocaleString('en-IN');
+    }
+  }
+  recalcOverlays();
+  drawProfile();
+  updateReplayTimeLabel();
+}
+
+function onReplayScrub() {
+  let sl = document.getElementById('replaySlider');
+  if (!sl) return;
+  if (replayPlaying) stopReplayPlay();
+  applyReplayAt(Number(sl.value));
+}
+
+function toggleReplay() {
+  if (!fullHistory.length) {
+    setStatus('Load candles first for replay.', false);
+    return;
+  }
+  if (replayPlaying) {
+    stopReplayPlay();
+    return;
+  }
+  // start from beginning if at end
+  if (replayIdx >= fullHistory.length - 1) {
+    applyReplayAt(0);
+  } else if (!replayMode) {
+    applyReplayAt(0);
+  }
+  startReplayPlay();
+}
+
+function startReplayPlay() {
+  stopReplayPlay();
+  replayPlaying = true;
+  let btn = document.getElementById('btnReplayPlay');
+  if (btn) btn.textContent = '⏸ Pause';
+  let speed = Number(document.getElementById('replaySpeed').value) || 2;
+  let intervalMs = Math.max(50, 400 / speed);
+  replayTimer = setInterval(function() {
+    if (replayIdx >= fullHistory.length - 1) {
+      stopReplayPlay();
+      return;
+    }
+    applyReplayAt(replayIdx + 1);
+  }, intervalMs);
+}
+
+function stopReplayPlay() {
+  replayPlaying = false;
+  if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+  let btn = document.getElementById('btnReplayPlay');
+  if (btn) btn.textContent = '▶ Replay';
+}
+
+function onReplaySpeedChange() {
+  if (replayPlaying) startReplayPlay();
+  saveSettings();
+}
+
+function exitReplay() {
+  stopReplayPlay();
+  replayMode = false;
+  if (fullHistory.length) {
+    history = fullHistory.map(c => Object.assign({}, c));
+    profileSamples = fullProfileSamples.map(s => Object.assign({}, s));
+    if (candles) candles.setData(history);
+    setupReplaySlider();
+    recalcOverlays();
+    drawProfile();
+  }
+  setStatus('Back to full / live view.', true);
+}
+
+// ===== Settings persistence =====
+const SETTINGS_KEY = 'fno_oi_settings_v1';
+function saveSettings() {
+  try {
+    let o = {
+      dailyOn: !!(document.getElementById('dailyOn') || {}).checked,
+      weeklyOn: !!(document.getElementById('weeklyOn') || {}).checked,
+      pdOn: !!(document.getElementById('pdOn') || {}).checked,
+      ibOn: !!(document.getElementById('ibOn') || {}).checked,
+      pocOn: !!(document.getElementById('pocOn') || {}).checked,
+      toTop3On: !!(document.getElementById('toTop3On') || {}).checked,
+      toTicksOn: !!(document.getElementById('toTicksOn') || {}).checked,
+      showTable: !!(document.getElementById('showTable') || {}).checked,
+      bucket: (document.getElementById('bucket') || {}).value || '5',
+      interval: (document.getElementById('interval') || {}).value || '5',
+      side: (document.getElementById('side') || {}).value || 'ce',
+      metric: ((document.querySelector('input[name=metric]:checked') || {}).value) || 'doi',
+      replaySpeed: (document.getElementById('replaySpeed') || {}).value || '2',
+      showProfilePane: !!showProfilePane,
+      underlyingId: typeof selectedUnderlyingId !== 'undefined' ? selectedUnderlyingId : 'NIFTY',
+      symSearch: (document.getElementById('symSearch') || {}).value || ''
+    };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(o));
+  } catch (e) {}
+}
+
+function loadSettings() {
+  try {
+    let raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    let o = JSON.parse(raw);
+    function setChk(id, v) {
+      let el = document.getElementById(id);
+      if (el && typeof v === 'boolean') el.checked = v;
+    }
+    setChk('dailyOn', o.dailyOn);
+    setChk('weeklyOn', o.weeklyOn);
+    setChk('pdOn', o.pdOn);
+    setChk('ibOn', o.ibOn);
+    setChk('pocOn', o.pocOn);
+    setChk('toTop3On', o.toTop3On);
+    setChk('toTicksOn', o.toTicksOn);
+    setChk('showTable', o.showTable);
+    if (o.bucket && document.getElementById('bucket')) document.getElementById('bucket').value = o.bucket;
+    if (o.interval && document.getElementById('interval')) document.getElementById('interval').value = o.interval;
+    if (o.side && document.getElementById('side')) document.getElementById('side').value = o.side;
+    if (o.metric) {
+      let r = document.querySelector('input[name=metric][value="' + o.metric + '"]');
+      if (r) r.checked = true;
+    }
+    if (o.replaySpeed && document.getElementById('replaySpeed')) document.getElementById('replaySpeed').value = o.replaySpeed;
+    if (o.symSearch && document.getElementById('symSearch')) document.getElementById('symSearch').value = o.symSearch;
+    if (o.underlyingId) {
+      selectedUnderlyingId = o.underlyingId;
+      if (typeof filterUnderlyingSelect === 'function') filterUnderlyingSelect();
+      let sel = document.getElementById('underlying');
+      if (sel && o.underlyingId) {
+        // ensure option exists
+        let found = Array.from(sel.options).some(op => op.value === o.underlyingId);
+        if (found) sel.value = o.underlyingId;
+      }
+      if (typeof UNDERLYINGS !== 'undefined') {
+        let u = UNDERLYINGS.find(x => x.id === o.underlyingId);
+        if (u) {
+          currentUnderlying = u;
+          let lab = document.getElementById('selectedSymLabel');
+          if (lab) lab.textContent = u.label;
+        }
+      }
+    }
+    if (typeof o.showProfilePane === 'boolean') {
+      showProfilePane = o.showProfilePane;
+      let pane = document.getElementById('profilePane');
+      let btn = document.getElementById('btnToggleProfile');
+      if (pane) {
+        if (showProfilePane) pane.classList.remove('hidden');
+        else pane.classList.add('hidden');
+      }
+      if (btn) btn.textContent = showProfilePane ? 'Hide OI profile' : 'Show OI profile';
+    }
+  } catch (e) { console.warn('settings load', e); }
+}
+
+
 function boot() {
   try { populateUnderlyingSelect(); } catch (e) { console.error(e); }
+  try { loadSettings(); } catch (e) {}
   initChart();
+  // persist on changes
+  document.addEventListener('change', function(ev) {
+    if (ev.target && (ev.target.closest && ev.target.closest('.swrow, .replay-bar, .setup-body, #tableCard'))) {
+      saveSettings();
+    }
+  });
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);
