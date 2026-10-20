@@ -8,7 +8,7 @@ android {
         applicationId 'com.niftyoiprofile.app'
         minSdk 24
         targetSdk 35
-        versionCode 37
+        versionCode 38
         versionName '2.8.1'
     }
     compileOptions {

@@ -459,7 +459,7 @@ public class MainActivity extends Activity {
             watchLevels.put(sid, lv);
         }
 
-        @JavascriptInterface
+                @JavascriptInterface
         public void notifyLevelChange(String sid, int which, double from, double to, String label) {
             if (!alertLevelEnabled || !watchScanActive) return;
             String key = sid + ":L" + which;
@@ -470,7 +470,7 @@ public class MainActivity extends Activity {
             String msg = (label != null ? label : sid) + " | TO" + which + " level "
                     + String.format(java.util.Locale.US, "%.0f", from) + " -> "
                     + String.format(java.util.Locale.US, "%.0f", to);
-            status("LEVEL TO" + which + " · " + label, true);
+            status("LEVEL TO" + which + " - " + label, true);
             js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg) + ")");
             sendTelegram(msg);
         }
