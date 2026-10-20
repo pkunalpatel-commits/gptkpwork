@@ -602,10 +602,21 @@ window.onChainResponse = (ok, text) => {
   if (!ok) { setStatus(text, false); return; }
   try {
     let j = JSON.parse(text);
-    chain = (j.data && j.data.oc) || j.oc || {};
-    window._allStrikes = Object.keys(chain).map(Number).filter(isFinite).sort((a, b) => a - b);
+    let raw = (j.data && j.data.oc) || j.oc || {};
+    // Dhan keys are often "24500.000000" — normalize to integer string keys
+    chain = {};
+    Object.keys(raw).forEach(function(k) {
+      let n = Number(k);
+      if (!isFinite(n)) return;
+      let key = String(Math.round(n));
+      chain[key] = raw[k];
+    });
+    window._allStrikes = Object.keys(chain).map(Number).filter(isFinite).sort(function(a, b) { return a - b; });
     if (!window._allStrikes.length) {
-      document.getElementById('strike').innerHTML = '<option value="">—</option>';
+      let box = document.getElementById('strikeResults');
+      if (box) box.innerHTML = '<div class="strike-empty">Chain empty — try another expiry</div>';
+      let hid = document.getElementById('strike');
+      if (hid) hid.value = '';
       setStatus('Chain empty.', false);
       return;
     }
@@ -624,23 +635,29 @@ function filterStrikeList(preferSelect) {
   let all = window._allStrikes || [];
   let q = ((document.getElementById('strikeSearch') || {}).value || '').trim();
   let list = all;
-  if (q) list = all.filter(k => String(k).indexOf(q) >= 0);
+  if (q) list = all.filter(function(k) { return String(k).indexOf(q) >= 0; });
   let cur = preferSelect != null ? String(preferSelect) : (hid ? hid.value : '');
   if (!list.length) {
     box.innerHTML = '<div class="strike-empty">' + (all.length ? 'No match for "' + q + '"' : 'Load option chain first') + '</div>';
     return;
   }
-  // show up to 40 matches for performance
-  let view = list.slice(0, 40);
-  box.innerHTML = view.map(k => {
+  let view = list.slice(0, 50);
+  let htmlRows = '';
+  for (let i = 0; i < view.length; i++) {
+    let k = view[i];
     let on = String(k) === String(cur) ? ' on' : '';
-    return '<div class="strike-item' + on + '" onclick="pickStrike(\'' + k + '\')">' + k + '</div>';
-  }).join('');
-  if (list.length > 40) {
-    box.innerHTML += '<div class="strike-empty">+' + (list.length - 40) + ' more — refine search</div>';
+    htmlRows += '<div class="strike-item' + on + '" data-strike="' + k + '">' + k + '</div>';
   }
-  // auto-select prefer or first match when searching exact
-  if (preferSelect != null && list.some(k => String(k) === String(preferSelect))) {
+  if (list.length > 50) {
+    htmlRows += '<div class="strike-empty">+' + (list.length - 50) + ' more — refine search</div>';
+  }
+  box.innerHTML = htmlRows;
+  // click handlers (avoid fragile inline quotes)
+  let items = box.querySelectorAll('.strike-item');
+  for (let i = 0; i < items.length; i++) {
+    items[i].onclick = function() { pickStrike(this.getAttribute('data-strike')); };
+  }
+  if (preferSelect != null && list.some(function(k) { return String(k) === String(preferSelect); })) {
     if (hid) hid.value = String(preferSelect);
   } else if (q && list.length === 1) {
     pickStrike(list[0]);
@@ -661,12 +678,19 @@ function filterStrikeSelect(preferSelect) { filterStrikeList(preferSelect); }
 
 function startContract() {
   if (!chain) { setStatus('Load option chain first.', false); return; }
-  let strike = document.getElementById('strike').value;
-  let side = document.getElementById('side').value;
-  selected = chain[strike] && chain[strike][side];
-  if (!selected) selected = chain[strike] && (chain[strike][side.toUpperCase()] || chain[strike][side.toLowerCase()]);
+  let strike = (document.getElementById('strike') || {}).value;
+  if (!strike) { setStatus('Select a strike from the list.', false); return; }
+  let side = (document.getElementById('side') || {}).value || 'ce';
+  let leg = chain[strike] || chain[String(Number(strike))] || null;
+  if (!leg) {
+    // last resort: find closest key
+    let keys = Object.keys(chain);
+    let hit = keys.find(function(k) { return Number(k) === Number(strike); });
+    leg = hit ? chain[hit] : null;
+  }
+  selected = leg && (leg[side] || leg[side.toUpperCase()] || leg[side.toLowerCase()]);
   let sid = selected && (selected.security_id || selected.securityId || selected.SecurityId);
-  if (!sid) { setStatus('No security_id for this contract.', false); return; }
+  if (!sid) { setStatus('No security_id for strike ' + strike + ' ' + side.toUpperCase() + '. Pick another.', false); return; }
   sid = String(sid);
   document.getElementById('contractInfo').textContent =
     (currentUnderlying && currentUnderlying.label ? currentUnderlying.label + ' · ' : '') +
