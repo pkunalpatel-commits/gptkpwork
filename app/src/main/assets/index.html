@@ -634,7 +634,7 @@ function filterStrikeList(preferSelect) {
   let view = list.slice(0, 40);
   box.innerHTML = view.map(k => {
     let on = String(k) === String(cur) ? ' on' : '';
-    return '<div class="strike-item' + on + '" onclick="pickStrike('' + k + '')">' + k + '</div>';
+    return '<div class="strike-item' + on + '" onclick="pickStrike(\'' + k + '\')">' + k + '</div>';
   }).join('');
   if (list.length > 40) {
     box.innerHTML += '<div class="strike-empty">+' + (list.length - 40) + ' more — refine search</div>';

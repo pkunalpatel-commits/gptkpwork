@@ -145,7 +145,9 @@ public class MainActivity extends Activity {
             clientId = cid.trim();
             accessToken = token.trim();
             saveCredentials(clientId, accessToken);
-            status("Connected to Dhan. Credentials saved. Select symbol → Load expiries.", true);
+            status("Credentials saved. Connected to Dhan.", true);
+            // Keep previous behaviour: verify API with default underlying expiries
+            fetchExpiries();
         }
 
         @JavascriptInterface
