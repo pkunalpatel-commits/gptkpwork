@@ -48,6 +48,11 @@ public class MainActivity extends Activity {
     private volatile String tgToken = "";
     private volatile String[] tgChats = new String[0];
     private volatile long alertCooldownMs = 3 * 60 * 1000L;
+    private volatile long levelCooldownMs = 5 * 60 * 1000L;
+    private volatile boolean alertCrossEnabled = true;
+    private volatile boolean alertLevelEnabled = true;
+    private final Map<String, Double> watchMinLtp = new HashMap<>();
+    private final Map<String, Long> lastLevelAlertAt = new HashMap<>();
     private volatile String selectedSegment = "NSE_FNO";
     private volatile int underlyingScrip = 13;
     private volatile String underlyingSeg = "IDX_I";
@@ -348,6 +353,7 @@ public class MainActivity extends Activity {
                 watchLevels.clear();
                 watchLabels.clear();
                 lastLtpMap.clear();
+                watchMinLtp.clear();
                 JSONArray arr = new JSONArray(watchJson);
                 JSONArray list = new JSONArray();
                 for (int i = 0; i < arr.length(); i++) {
@@ -362,6 +368,11 @@ public class MainActivity extends Activity {
                     };
                     watchLevels.put(id, lv);
                     watchLabels.put(id, label);
+                    double minL = w.optDouble("minLtp", 0);
+                    if (minL > 0) watchMinLtp.put(id, minL);
+                    if (w.has("crossOn")) alertCrossEnabled = w.optBoolean("crossOn", true);
+                    if (w.has("levelOn")) alertLevelEnabled = w.optBoolean("levelOn", true);
+                    if (w.has("levelCooldownMin")) levelCooldownMs = Math.max(1, w.optInt("levelCooldownMin", 5)) * 60L * 1000L;
                     JSONObject item = new JSONObject();
                     item.put("ExchangeSegment", seg);
                     item.put("SecurityId", id);
@@ -430,6 +441,43 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void setAlertFlags(boolean crossOn, boolean levelOn, int levelCooldownMin) {
+            alertCrossEnabled = crossOn;
+            alertLevelEnabled = levelOn;
+            levelCooldownMs = Math.max(1, levelCooldownMin) * 60L * 1000L;
+        }
+
+        @JavascriptInterface
+        public void updateWatchLevels(String sid, double to1, double to2, double to3) {
+            if (sid == null) return;
+            sid = sid.trim();
+            double[] lv = new double[] {
+                to1 >= 0 ? to1 : Double.NaN,
+                to2 >= 0 ? to2 : Double.NaN,
+                to3 >= 0 ? to3 : Double.NaN
+            };
+            watchLevels.put(sid, lv);
+        }
+
+        @JavascriptInterface
+        public void notifyLevelChange(String sid, int which, double from, double to, String label) {
+            if (!alertLevelEnabled || !watchScanActive) return;
+            String key = sid + ":L" + which;
+            long now = System.currentTimeMillis();
+            Long last = lastLevelAlertAt.get(key);
+            if (last != null && (now - last) < levelCooldownMs) return;
+            lastLevelAlertAt.put(key, now);
+            String msg = (label != null ? label : sid) + "
+TO" + which + " level " +
+                    String.format(java.util.Locale.US, "%.0f", from) + " → " +
+                    String.format(java.util.Locale.US, "%.0f", to);
+            status("LEVEL TO" + which + " · " + label, true);
+            js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg.replace("
+", " | ")) + ")");
+            sendTelegram(msg);
+        }
+
+        @JavascriptInterface
         public void disconnect() {
             watchScanActive = false;
             try { stopService(new Intent(MainActivity.this, ScanService.class)); } catch (Exception ignored) {}
@@ -459,18 +507,16 @@ public class MainActivity extends Activity {
      */
 
     private void checkWatchCross(String sid, double ltp) {
+        if (!alertCrossEnabled) return;
         double[] lv = watchLevels.get(sid);
         if (lv == null) {
-            // try without type suffix issues
             for (String k : watchLevels.keySet()) {
-                if (k.equals(sid) || k.equals(String.valueOf((long) Double.parseDouble(sid)))) {
-                    lv = watchLevels.get(k);
-                    sid = k;
-                    break;
-                }
+                if (k.equals(sid)) { lv = watchLevels.get(k); break; }
             }
         }
         if (lv == null) return;
+        Double minL = watchMinLtp.get(sid);
+        if (minL != null && minL > 0 && ltp < minL) return; // scan only if LTP above special price
         Double prev = lastLtpMap.get(sid);
         lastLtpMap.put(sid, ltp);
         if (prev == null) return;

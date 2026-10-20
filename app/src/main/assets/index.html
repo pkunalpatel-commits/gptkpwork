@@ -66,6 +66,9 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 .strike-item{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px;font-weight:600}
 .strike-item:active,.strike-item.on{background:#1a3a5c;color:#1ecf9a}
 .strike-empty{padding:10px;color:var(--muted);font-size:12px}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0}
+.chip{padding:6px 10px;border-radius:14px;border:1px solid #2a3a50;background:#0a1422;color:#b8c4d8;font-size:11px}
+.chip.on{background:#1a3a5c;border-color:#5b9fff;color:#fff}
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -216,22 +219,62 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 </div>
 
 <details class="setup" id="alertPanel">
-  <summary>🔔 Watchlist · TO cross alerts</summary>
+  <summary>🔔 Watchlist · dynamic TO alerts</summary>
   <div class="setup-body">
+    <label>Expiries to scan (tick)</label>
+    <div id="expiryTickBox" class="chip-row" style="flex-wrap:wrap;max-height:90px;overflow:auto"></div>
+    <div class="grid2">
+      <div>
+        <label>ATM ±N strikes</label>
+        <input id="atmN" type="number" min="1" max="20" value="5">
+      </div>
+      <div>
+        <label>Min LTP (skip below)</label>
+        <input id="minLtp" type="number" min="0" step="0.05" value="0" placeholder="0 = off">
+      </div>
+    </div>
+    <div class="grid2">
+      <div>
+        <label>Side</label>
+        <select id="bulkSide">
+          <option value="both">CE+PE</option>
+          <option value="ce">CE only</option>
+          <option value="pe">PE only</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:flex-end">
+        <button type="button" class="sec" onclick="bulkAddAtmN()">Add ATM±N (ticked expiries)</button>
+      </div>
+    </div>
     <button type="button" class="sec" onclick="addCurrentToWatchlist()">+ Add current contract</button>
-    <div id="watchlistBox" style="margin:8px 0;font-size:12px;color:#b8c4d8">Empty — load a contract then add</div>
+    <div id="watchlistBox" style="margin:8px 0;font-size:12px;color:#b8c4d8">Empty</div>
     <label>Telegram bot token</label>
     <input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC...">
-    <label>Chat IDs (comma-separated, multiple OK)</label>
+    <label>Chat IDs (comma-separated)</label>
     <input id="tgChats" type="text" placeholder="123456789, 987654321">
-    <label>Cooldown minutes per line (TO1/TO2/TO3)</label>
-    <input id="alertCooldown" type="number" min="1" max="60" value="3">
-    <div class="grid2" style="margin-top:8px">
+    <div class="grid2">
+      <div>
+        <label>Cross cooldown (min)</label>
+        <input id="alertCooldown" type="number" min="1" max="60" value="3">
+      </div>
+      <div>
+        <label>Level-change cooldown (min)</label>
+        <input id="levelCooldown" type="number" min="1" max="60" value="5">
+      </div>
+    </div>
+    <div class="swrow" style="margin:6px 0">
+      <label class="sw"><input id="alertCrossOn" type="checkbox" checked>LTP cross TO</label>
+      <label class="sw"><input id="alertLevelOn" type="checkbox" checked>TO level change</label>
+    </div>
+    <div class="grid2">
       <button type="button" onclick="startBgScan()">Start scan</button>
       <button type="button" class="sec" onclick="stopBgScan()">Stop scan</button>
     </div>
     <div class="status" id="scanStatus">Scan off</div>
-    <p class="note" style="margin:6px 0 0">Foreground scan · one WebSocket · alert on LTP cross TO1/TO2/TO3 (positive-OI turnover). Levels saved from last chart top-3.</p>
+    <label>App activity log</label>
+    <div id="appLog" style="height:120px;overflow:auto;background:#0a1422;border:1px solid var(--line);border-radius:6px;padding:6px;font-size:10px;color:#8fa0b8;font-family:monospace"></div>
+    <button type="button" class="sec" onclick="clearAppLog()">Clear log</button>
+    <p class="note" style="margin:6px 0 0">Dynamic TO refresh every 5 min · FG WebSocket · positive-OI top3 · Dhan rate-aware bulk add.</p>
   </div>
 </details>
 
@@ -249,10 +292,14 @@ let showProfilePane = true;
 const CHART_H = 420;
 
 function setStatus(s, ok) {
-  document.getElementById('status').textContent = s;
+  try { if (s) appLog((ok === false ? 'ERR ' : '') + s); } catch (e) {}
+  let st = document.getElementById('status');
+  if (st) st.textContent = s;
   let p = document.getElementById('pill');
-  p.textContent = ok ? 'LIVE' : 'CHECK';
-  p.className = 'pill' + (ok ? ' ok' : '');
+  if (p) {
+    p.textContent = ok ? 'LIVE' : 'CHECK';
+    p.className = 'pill' + (ok ? ' ok' : '');
+  }
 }
 window.onDhanStatus = o => setStatus(o.message, o.ok);
 
@@ -599,6 +646,8 @@ window.onExpiryResponse = (ok, text) => {
     s.innerHTML = '';
     a.forEach(x => { let o = document.createElement('option'); o.value = x; o.textContent = x; s.appendChild(o); });
     setStatus('Expiries loaded (' + a.length + '). Load option chain.', true);
+    try { renderExpiryTicks(); } catch (e) {}
+    appLog('Expiries loaded ' + a.length);
   } catch (e) { setStatus('Expiry parse error: ' + e, false); }
 };
 
@@ -614,6 +663,7 @@ window.onChainResponse = (ok, text) => {
     let j = JSON.parse(text);
     let raw = (j.data && j.data.oc) || j.oc || {};
     // Dhan keys are often "24500.000000" — normalize to integer string keys
+    if (j.data && j.data.last_price != null) chainSpot = Number(j.data.last_price);
     chain = {};
     Object.keys(raw).forEach(function(k) {
       let n = Number(k);
@@ -1524,10 +1574,39 @@ function loadSettings() {
 
 
 
-// ===== Watchlist + TO cross alerts =====
-let watchlist = []; // {id,label,seg,to1,to2,to3,lastLtp}
+
+// ===== Watchlist + dynamic TO alerts + app log =====
+let watchlist = [];
 const WL_KEY = 'fno_watchlist_v1';
 const TG_KEY = 'fno_tg_v1';
+let appLogLines = [];
+let levelRefreshTimer = null;
+let bulkQueue = [];
+let bulkRunning = false;
+let chainSpot = null;
+let tickedExpiries = {};
+
+function appLog(msg) {
+  try {
+    let t = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).format(new Date());
+    let line = t + '  ' + msg;
+    appLogLines.push(line);
+    if (appLogLines.length > 300) appLogLines = appLogLines.slice(-300);
+    let el = document.getElementById('appLog');
+    if (el) {
+      el.textContent = appLogLines.join('\n');
+      el.scrollTop = el.scrollHeight;
+    }
+  } catch (e) {}
+}
+
+function clearAppLog() {
+  appLogLines = [];
+  let el = document.getElementById('appLog');
+  if (el) el.textContent = '';
+}
 
 function loadWatchlist() {
   try { watchlist = JSON.parse(localStorage.getItem(WL_KEY) || '[]'); } catch (e) { watchlist = []; }
@@ -1536,8 +1615,15 @@ function loadWatchlist() {
     if (tg.token && document.getElementById('tgToken')) document.getElementById('tgToken').value = tg.token;
     if (tg.chats && document.getElementById('tgChats')) document.getElementById('tgChats').value = tg.chats;
     if (tg.cooldown && document.getElementById('alertCooldown')) document.getElementById('alertCooldown').value = tg.cooldown;
+    if (tg.levelCooldown && document.getElementById('levelCooldown')) document.getElementById('levelCooldown').value = tg.levelCooldown;
+    if (typeof tg.crossOn === 'boolean' && document.getElementById('alertCrossOn')) document.getElementById('alertCrossOn').checked = tg.crossOn;
+    if (typeof tg.levelOn === 'boolean' && document.getElementById('alertLevelOn')) document.getElementById('alertLevelOn').checked = tg.levelOn;
+    if (tg.atmN && document.getElementById('atmN')) document.getElementById('atmN').value = tg.atmN;
+    if (tg.minLtp != null && document.getElementById('minLtp')) document.getElementById('minLtp').value = tg.minLtp;
   } catch (e) {}
   renderWatchlist();
+  renderExpiryTicks();
+  appLog('Watchlist loaded · ' + watchlist.length + ' items');
 }
 
 function saveWatchlist() {
@@ -1545,7 +1631,12 @@ function saveWatchlist() {
   let tg = {
     token: (document.getElementById('tgToken') || {}).value || '',
     chats: (document.getElementById('tgChats') || {}).value || '',
-    cooldown: Number((document.getElementById('alertCooldown') || {}).value || 3)
+    cooldown: Number((document.getElementById('alertCooldown') || {}).value || 3),
+    levelCooldown: Number((document.getElementById('levelCooldown') || {}).value || 5),
+    crossOn: !!(document.getElementById('alertCrossOn') || {}).checked,
+    levelOn: !!(document.getElementById('alertLevelOn') || {}).checked,
+    atmN: Number((document.getElementById('atmN') || {}).value || 5),
+    minLtp: Number((document.getElementById('minLtp') || {}).value || 0)
   };
   localStorage.setItem(TG_KEY, JSON.stringify(tg));
   renderWatchlist();
@@ -1555,19 +1646,50 @@ function renderWatchlist() {
   let box = document.getElementById('watchlistBox');
   if (!box) return;
   if (!watchlist.length) {
-    box.innerHTML = 'Empty — load a contract then add';
+    box.innerHTML = 'Empty — add current or ATM±N';
     return;
   }
   box.innerHTML = watchlist.map(function(w, i) {
+    let to = [w.to1, w.to2, w.to3].filter(function(x) { return x != null && !isNaN(x); }).join('/');
+    let min = w.minLtp != null && w.minLtp > 0 ? ' · min₹' + w.minLtp : '';
     return '<div style="padding:6px 0;border-bottom:1px solid #1a2738">' +
-      '<b>' + (w.label || w.id) + '</b> · TO ' + [w.to1,w.to2,w.to3].filter(function(x){return x!=null;}).join('/') +
-      ' <button type="button" class="sec" style="width:auto;padding:2px 8px;margin:0 0 0 8px" onclick="removeWatch(' + i + ')">✕</button></div>';
+      '<b>' + (w.label || w.id) + '</b><br><span style="color:#8fa0b8">TO ' + (to || '—') + min +
+      ' · id ' + w.id + '</span> ' +
+      '<button type="button" class="sec" style="width:auto;padding:2px 8px;margin:0" onclick="removeWatch(' + i + ')">✕</button></div>';
   }).join('');
 }
 
 function removeWatch(i) {
+  let w = watchlist[i];
   watchlist.splice(i, 1);
   saveWatchlist();
+  appLog('Removed ' + (w && w.label ? w.label : i));
+}
+
+function renderExpiryTicks() {
+  let box = document.getElementById('expiryTickBox');
+  if (!box) return;
+  let sel = document.getElementById('expiry');
+  let opts = sel ? Array.from(sel.options).map(function(o) { return o.value; }).filter(Boolean) : [];
+  if (!opts.length) {
+    box.innerHTML = '<span style="color:#8fa0b8;font-size:11px">Load expiries first</span>';
+    return;
+  }
+  box.innerHTML = opts.map(function(exp) {
+    let on = tickedExpiries[exp] ? ' on' : '';
+    let label = exp;
+    try {
+      let d = new Date(exp + 'T00:00:00');
+      label = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    } catch (e) {}
+    return '<button type="button" class="chip' + on + '" data-exp="' + exp + '" onclick="toggleExpiryTick(\'' + exp + '\')">' + label + '</button>';
+  }).join('');
+}
+
+function toggleExpiryTick(exp) {
+  tickedExpiries[exp] = !tickedExpiries[exp];
+  renderExpiryTicks();
+  appLog((tickedExpiries[exp] ? 'Tick ' : 'Untick ') + exp);
 }
 
 function addCurrentToWatchlist() {
@@ -1578,44 +1700,217 @@ function addCurrentToWatchlist() {
   let top = window._lastTop3 || [];
   let label = (document.getElementById('contractInfo') || {}).textContent || sid;
   let seg = (currentUnderlying && currentUnderlying.optExch) || 'NSE_FNO';
-  // replace if exists
+  let minLtp = Number((document.getElementById('minLtp') || {}).value || 0);
   watchlist = watchlist.filter(function(w) { return String(w.id) !== sid; });
   watchlist.push({
-    id: sid,
-    label: label,
-    seg: seg,
+    id: sid, label: label, seg: seg,
     to1: top[0] != null ? top[0] : null,
     to2: top[1] != null ? top[1] : null,
-    to3: top[2] != null ? top[2] : null
+    to3: top[2] != null ? top[2] : null,
+    minLtp: minLtp > 0 ? minLtp : 0,
+    lastTo: top.slice()
   });
   saveWatchlist();
-  setStatus('Added to watchlist · TO levels ' + top.join(', '), true);
+  appLog('Added ' + label + ' TO ' + top.join('/'));
+  setStatus('Added to watchlist.', true);
+  pushLevelsToNative(sid, top);
+}
+
+function pushLevelsToNative(sid, top) {
+  if (window.DhanBridge && DhanBridge.updateWatchLevels) {
+    DhanBridge.updateWatchLevels(
+      String(sid),
+      top[0] != null ? Number(top[0]) : -1,
+      top[1] != null ? Number(top[1]) : -1,
+      top[2] != null ? Number(top[2]) : -1
+    );
+  }
+}
+
+/** Called when chart top3 recomputed — live update for matching watch item */
+function onDynamicTop3(top3) {
+  window._lastTop3 = top3 || [];
+  if (!selected) return;
+  let sid = selected.security_id || selected.securityId || selected.SecurityId;
+  if (!sid) return;
+  sid = String(sid);
+  let w = watchlist.find(function(x) { return String(x.id) === sid; });
+  if (!w) return;
+  let prev = [w.to1, w.to2, w.to3];
+  w.to1 = top3[0] != null ? top3[0] : null;
+  w.to2 = top3[1] != null ? top3[1] : null;
+  w.to3 = top3[2] != null ? top3[2] : null;
+  pushLevelsToNative(sid, top3);
+  // level-change detect
+  if ((document.getElementById('alertLevelOn') || {}).checked) {
+    for (let i = 0; i < 3; i++) {
+      if (top3[i] != null && prev[i] != null && Number(top3[i]) !== Number(prev[i])) {
+        appLog('TO' + (i + 1) + ' level ' + prev[i] + ' → ' + top3[i] + ' · ' + (w.label || sid));
+        if (window.DhanBridge && DhanBridge.notifyLevelChange) {
+          DhanBridge.notifyLevelChange(sid, i + 1, Number(prev[i]), Number(top3[i]), w.label || sid);
+        }
+      }
+    }
+  }
+  saveWatchlist();
+}
+
+function bulkAddAtmN() {
+  if (!chain) { setStatus('Load option chain for an expiry first (or run bulk queue).', false); return; }
+  let exps = Object.keys(tickedExpiries).filter(function(e) { return tickedExpiries[e]; });
+  if (!exps.length) {
+    // default: current expiry only
+    let cur = (document.getElementById('expiry') || {}).value;
+    if (cur) exps = [cur];
+  }
+  if (!exps.length) { setStatus('Tick at least one expiry.', false); return; }
+  let n = Number((document.getElementById('atmN') || {}).value || 5);
+  let sideMode = (document.getElementById('bulkSide') || {}).value || 'both';
+  let minLtp = Number((document.getElementById('minLtp') || {}).value || 0);
+  let curExp = (document.getElementById('expiry') || {}).value;
+  // Process current expiry chain immediately; queue others
+  let pending = exps.filter(function(e) { return e !== curExp; });
+  addFromChainAtmN(chain, curExp || exps[0], n, sideMode, minLtp);
+  if (pending.length) {
+    bulkQueue = pending.map(function(e) {
+      return { expiry: e, n: n, sideMode: sideMode, minLtp: minLtp };
+    });
+    appLog('Queued ' + pending.length + ' expiries for ATM±N (3s gap, Dhan limit)');
+    runBulkQueue();
+  }
+}
+
+function addFromChainAtmN(ch, expiry, n, sideMode, minLtp) {
+  let keys = Object.keys(ch).map(Number).filter(isFinite).sort(function(a, b) { return a - b; });
+  if (!keys.length) { appLog('No strikes for ' + expiry); return; }
+  let spot = chainSpot;
+  if (spot == null || !isFinite(spot)) {
+    spot = keys[Math.floor(keys.length / 2)];
+  }
+  let atm = keys.reduce(function(best, k) {
+    return Math.abs(k - spot) < Math.abs(best - spot) ? k : best;
+  }, keys[0]);
+  let idx = keys.indexOf(atm);
+  let from = Math.max(0, idx - n);
+  let to = Math.min(keys.length - 1, idx + n);
+  let sides = sideMode === 'both' ? ['ce', 'pe'] : [sideMode];
+  let seg = (currentUnderlying && currentUnderlying.optExch) || 'NSE_FNO';
+  let added = 0;
+  for (let i = from; i <= to; i++) {
+    let k = keys[i];
+    let leg = ch[String(k)] || ch[k];
+    if (!leg) continue;
+    sides.forEach(function(side) {
+      let c = leg[side] || leg[side.toUpperCase()];
+      if (!c) return;
+      let sid = c.security_id || c.securityId || c.SecurityId;
+      if (!sid) return;
+      sid = String(sid);
+      let ltp = Number(c.last_price || c.LTP || c.ltp || 0);
+      if (minLtp > 0 && ltp > 0 && ltp < minLtp) return;
+      let label = (currentUnderlying && currentUnderlying.id ? currentUnderlying.id + ' ' : '') +
+        k + ' ' + side.toUpperCase() + ' · ' + expiry;
+      watchlist = watchlist.filter(function(w) { return String(w.id) !== sid; });
+      let top = window._lastTop3 || [];
+      watchlist.push({
+        id: sid, label: label, seg: seg,
+        to1: top[0] != null ? top[0] : null,
+        to2: top[1] != null ? top[1] : null,
+        to3: top[2] != null ? top[2] : null,
+        minLtp: minLtp > 0 ? minLtp : 0,
+        expiry: expiry, strike: k, side: side
+      });
+      added++;
+    });
+  }
+  saveWatchlist();
+  appLog('ATM±' + n + ' ' + expiry + ' · added ' + added + ' · spot~' + spot + ' ATM ' + atm);
+  setStatus('Added ' + added + ' contracts from ' + expiry, true);
+}
+
+function runBulkQueue() {
+  if (bulkRunning || !bulkQueue.length) return;
+  bulkRunning = true;
+  let job = bulkQueue.shift();
+  appLog('Loading chain for expiry ' + job.expiry + '…');
+  // temporary handler
+  let prev = window.onChainResponse;
+  window.onChainResponse = function(ok, text) {
+    window.onChainResponse = prev;
+    if (ok) {
+      try {
+        let j = JSON.parse(text);
+        let raw = (j.data && j.data.oc) || j.oc || {};
+        if (j.data && j.data.last_price != null) chainSpot = Number(j.data.last_price);
+        let ch = {};
+        Object.keys(raw).forEach(function(k) {
+          let n = Number(k);
+          if (isFinite(n)) ch[String(Math.round(n))] = raw[k];
+        });
+        addFromChainAtmN(ch, job.expiry, job.n, job.sideMode, job.minLtp);
+      } catch (e) {
+        appLog('Bulk chain parse error: ' + e);
+      }
+    } else {
+      appLog('Bulk chain fail ' + job.expiry + ': ' + text);
+    }
+    bulkRunning = false;
+    if (bulkQueue.length) {
+      setTimeout(runBulkQueue, 3200); // Dhan option-chain spacing
+    }
+  };
+  if (window.DhanBridge) DhanBridge.fetchChain(job.expiry);
+  else {
+    bulkRunning = false;
+    appLog('No DhanBridge for bulk');
+  }
 }
 
 function startBgScan() {
   saveWatchlist();
   if (!watchlist.length) { setStatus('Watchlist empty.', false); return; }
-  let token = (document.getElementById('tgToken') || {}).value.trim();
-  let chats = (document.getElementById('tgChats') || {}).value.trim();
+  let token = ((document.getElementById('tgToken') || {}).value || '').trim();
+  let chats = ((document.getElementById('tgChats') || {}).value || '').trim();
   let cd = Number((document.getElementById('alertCooldown') || {}).value || 3);
+  let lcd = Number((document.getElementById('levelCooldown') || {}).value || 5);
+  let crossOn = !!(document.getElementById('alertCrossOn') || {}).checked;
+  let levelOn = !!(document.getElementById('alertLevelOn') || {}).checked;
   if (!window.DhanBridge || !DhanBridge.startWatchScan) {
     setStatus('Bridge missing startWatchScan.', false);
     return;
   }
-  DhanBridge.startWatchScan(JSON.stringify(watchlist), token, chats, cd);
+  // attach flags into payload
+  let payload = watchlist.map(function(w) {
+    return Object.assign({}, w, { crossOn: crossOn, levelOn: levelOn, levelCooldownMin: lcd });
+  });
+  DhanBridge.startWatchScan(JSON.stringify(payload), token, chats, cd);
+  if (DhanBridge.setAlertFlags) DhanBridge.setAlertFlags(crossOn, levelOn, lcd);
   let el = document.getElementById('scanStatus');
-  if (el) el.textContent = 'Scan ON · ' + watchlist.length + ' contracts';
+  if (el) el.textContent = 'Scan ON · ' + watchlist.length + ' · TO refresh 5m';
+  appLog('Scan ON · ' + watchlist.length + ' instruments');
+  if (levelRefreshTimer) clearInterval(levelRefreshTimer);
+  levelRefreshTimer = setInterval(function() {
+    appLog('Dynamic TO tick (5m) — chart contract levels refreshed from live profile');
+    if (window._lastTop3 && window._lastTop3.length) onDynamicTop3(window._lastTop3);
+    // push all known levels to native
+    watchlist.forEach(function(w) {
+      pushLevelsToNative(w.id, [w.to1, w.to2, w.to3]);
+    });
+  }, 5 * 60 * 1000);
 }
 
 function stopBgScan() {
+  if (levelRefreshTimer) { clearInterval(levelRefreshTimer); levelRefreshTimer = null; }
   if (window.DhanBridge && DhanBridge.stopWatchScan) DhanBridge.stopWatchScan();
   let el = document.getElementById('scanStatus');
   if (el) el.textContent = 'Scan off';
+  appLog('Scan OFF');
   setStatus('Background scan stopped.', true);
 }
 
 window.onWatchAlert = function(msg) {
   setStatus(msg, true);
+  appLog('ALERT ' + msg);
   let el = document.getElementById('scanStatus');
   if (el) el.textContent = msg;
 };
