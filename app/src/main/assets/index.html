@@ -248,6 +248,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     </div>
     <button type="button" class="sec" onclick="addCurrentToWatchlist()">+ Add current contract</button>
     <div id="watchlistBox" style="margin:8px 0;font-size:12px;color:#b8c4d8">Empty</div>
+    <button type="button" class="sec" onclick="clearWatchlist()">Clear all watchlist</button>
     <label>Telegram bot token</label>
     <input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC...">
     <label>Chat IDs (comma-separated)</label>
@@ -1664,6 +1665,25 @@ function removeWatch(i) {
   watchlist.splice(i, 1);
   saveWatchlist();
   appLog('Removed ' + (w && w.label ? w.label : i));
+}
+
+function clearWatchlist() {
+  if (!watchlist.length) {
+    setStatus('Watchlist already empty.', true);
+    return;
+  }
+  let n = watchlist.length;
+  if (!confirm('Remove all ' + n + ' contracts from watchlist?')) return;
+  watchlist = [];
+  saveWatchlist();
+  appLog('Cleared watchlist · ' + n + ' removed');
+  setStatus('Watchlist cleared (' + n + ').', true);
+  // Stop scan so we do not keep scanning removed IDs
+  try {
+    if (window.DhanBridge && DhanBridge.stopWatchScan) {
+      stopBgScan();
+    }
+  } catch (e) {}
 }
 
 function renderExpiryTicks() {
