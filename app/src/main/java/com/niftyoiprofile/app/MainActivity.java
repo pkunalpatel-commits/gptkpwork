@@ -465,7 +465,7 @@ public class MainActivity extends Activity {
             watchLevels.put(sid, lv);
         }
 
-                @JavascriptInterface
+        @JavascriptInterface
         public void notifyLevelChange(String sid, int which, double from, double to, String label, double bucket) {
             if (!alertLevelEnabled || !watchScanActive) return;
             if (bucket > 0) watchBucket = bucket;
@@ -512,6 +512,17 @@ public class MainActivity extends Activity {
      * Code 5 OI:    OI int @8
      * Code 8 Full:  LTP @8, volume @22, OI @34
      */
+
+
+    private String formatRange(double floor, double bucket) {
+        if (Double.isNaN(floor)) return "?";
+        double b = bucket > 0 ? bucket : 5;
+        double end = floor + b;
+        if (Math.abs(floor - Math.rint(floor)) < 1e-6 && Math.abs(b - Math.rint(b)) < 1e-6) {
+            return String.format(java.util.Locale.US, "%.0f-%.0f", floor, end);
+        }
+        return String.format(java.util.Locale.US, "%.1f-%.1f", floor, end);
+    }
 
     private void checkWatchCross(String sid, double ltp) {
         if (!alertCrossEnabled) return;
