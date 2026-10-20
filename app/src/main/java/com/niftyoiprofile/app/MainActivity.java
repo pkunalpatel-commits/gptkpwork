@@ -145,8 +145,7 @@ public class MainActivity extends Activity {
             clientId = cid.trim();
             accessToken = token.trim();
             saveCredentials(clientId, accessToken);
-            status("Credentials saved on device. Requesting expiry list…", true);
-            fetchExpiries();
+            status("Connected to Dhan. Credentials saved. Select symbol → Load expiries.", true);
         }
 
         @JavascriptInterface
@@ -209,25 +208,49 @@ public class MainActivity extends Activity {
             if (!ready()) return;
             try {
                 selectedSecurityId = securityId;
+                String iv = interval != null ? interval.trim() : "5";
+                // Map UI intervals to Dhan API: 2h/4h use 60m then JS aggregates; D = daily endpoint
+                boolean daily = "D".equalsIgnoreCase(iv) || "1D".equalsIgnoreCase(iv) || "DAY".equalsIgnoreCase(iv);
+                String apiInterval = iv;
+                if ("120".equals(iv) || "240".equals(iv)) apiInterval = "60";
+                // Dhan intraday supports 1,5,15,25,60; try 30 as-is (MCX docs mention 30)
+
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
+                java.text.SimpleDateFormat dayFmt = new java.text.SimpleDateFormat("yyyy-MM-dd");
+                dayFmt.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
+                java.util.Calendar cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
+
                 JSONObject b = new JSONObject();
                 b.put("securityId", securityId);
                 b.put("exchangeSegment", candleExchange);
                 b.put("instrument", candleInstrument);
-                b.put("interval", interval);
                 b.put("oi", true);
-                // Dhan requires "yyyy-MM-dd HH:mm:ss" strings (IST), not epoch
-                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-                sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
-                java.util.Calendar cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
-                String toDate = sdf.format(cal.getTime());
-                cal.add(java.util.Calendar.DAY_OF_MONTH, -7);
-                cal.set(java.util.Calendar.HOUR_OF_DAY, 9);
-                cal.set(java.util.Calendar.MINUTE, 15);
-                cal.set(java.util.Calendar.SECOND, 0);
-                String fromDate = sdf.format(cal.getTime());
-                b.put("fromDate", fromDate);
-                b.put("toDate", toDate);
-                postJson("https://api.dhan.co/v2/charts/intraday", b, "window.onCandlesResponse");
+
+                if (daily) {
+                    String toDate = dayFmt.format(cal.getTime());
+                    cal.add(java.util.Calendar.DAY_OF_MONTH, -120);
+                    String fromDate = dayFmt.format(cal.getTime());
+                    b.put("fromDate", fromDate);
+                    b.put("toDate", toDate);
+                    postJson("https://api.dhan.co/v2/charts/historical", b, "window.onCandlesResponse");
+                    status("Loading daily candles…", true);
+                } else {
+                    b.put("interval", apiInterval);
+                    String toDate = sdf.format(cal.getTime());
+                    int lookbackDays = 7;
+                    if ("60".equals(apiInterval) || "120".equals(iv) || "240".equals(iv)) lookbackDays = 30;
+                    else if ("30".equals(apiInterval) || "15".equals(apiInterval)) lookbackDays = 14;
+                    cal.add(java.util.Calendar.DAY_OF_MONTH, -lookbackDays);
+                    cal.set(java.util.Calendar.HOUR_OF_DAY, 9);
+                    cal.set(java.util.Calendar.MINUTE, 0);
+                    cal.set(java.util.Calendar.SECOND, 0);
+                    String fromDate = sdf.format(cal.getTime());
+                    b.put("fromDate", fromDate);
+                    b.put("toDate", toDate);
+                    postJson("https://api.dhan.co/v2/charts/intraday", b, "window.onCandlesResponse");
+                    status("Loading " + iv + " candles…", true);
+                }
             } catch (Exception e) {
                 status("Candle request error: " + e.getMessage(), false);
             }

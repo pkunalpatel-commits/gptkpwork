@@ -102,6 +102,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
         <option value="NSE_EQ">NSE_EQ (stock F&amp;O)</option>
         <option value="IDX_I">IDX_I (NSE index)</option>
         <option value="IDX_B">IDX_B (BSE index)</option>
+        <option value="MCX_COMM">MCX_COMM (commodity)</option>
       </select>
     </div>
     <button class="sec" type="button" onclick="loadExpiriesForSelected()">Load expiries for symbol</button>
@@ -128,7 +129,11 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
           <option value="1">1m</option>
           <option value="5" selected>5m</option>
           <option value="15">15m</option>
+          <option value="30">30m</option>
           <option value="60">60m</option>
+          <option value="120">2h</option>
+          <option value="240">4h</option>
+          <option value="D">1 Day</option>
         </select>
       </div>
       <div>
@@ -450,6 +455,16 @@ const UNDERLYINGS = [
   { id: 'WIPRO', label: 'WIPRO (NSE F&O Stock)', scrip: 3787, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
   { id: 'YESBANK', label: 'YESBANK (NSE F&O Stock)', scrip: 11915, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
   { id: 'ZYDUSLIFE', label: 'ZYDUSLIFE (NSE F&O Stock)', scrip: 7929, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
+  { id: 'CRUDEOIL', label: 'CRUDEOIL (MCX)', scrip: 573422, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'CRUDEOILM', label: 'CRUDEOIL Mini (MCX)', scrip: 573423, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'NATURALGAS', label: 'NATURALGAS (MCX)', scrip: 570750, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'NATGASMINI', label: 'NATGAS Mini (MCX)', scrip: 570751, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'GOLD', label: 'GOLD (MCX)', scrip: 495213, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'GOLDM', label: 'GOLD Mini (MCX)', scrip: 571445, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'SILVER', label: 'SILVER (MCX)', scrip: 495214, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'SILVERM', label: 'SILVER Mini (MCX)', scrip: 483080, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'COPPER', label: 'COPPER (MCX)', scrip: 574829, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
+  { id: 'ZINC', label: 'ZINC (MCX)', scrip: 574834, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
   { id: 'CUSTOM', label: 'Custom security ID…', scrip: 0, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' }
 ];
 
@@ -500,8 +515,8 @@ function resolveUnderlying() {
     return {
       id: 'CUSTOM', label: 'Custom ' + scrip,
       scrip: scrip, seg: seg,
-      optExch: seg === 'IDX_B' ? 'BSE_FNO' : 'NSE_FNO',
-      instrument: (seg === 'NSE_EQ') ? 'OPTSTK' : 'OPTIDX'
+      optExch: seg === 'IDX_B' ? 'BSE_FNO' : (seg === 'MCX_COMM' ? 'MCX_COMM' : 'NSE_FNO'),
+      instrument: (seg === 'NSE_EQ') ? 'OPTSTK' : (seg === 'MCX_COMM' ? 'OPTFUT' : 'OPTIDX')
     };
   }
   return u;
@@ -701,6 +716,29 @@ function seedProfileFromHistory() {
   return withOi;
 }
 
+
+function aggregateBars(bars, intervalMin) {
+  if (!bars || !bars.length || !intervalMin || intervalMin <= 60) return bars;
+  let out = [];
+  let bucketSec = intervalMin * 60;
+  let cur = null;
+  bars.forEach(function(b) {
+    let t0 = Math.floor(b.time / bucketSec) * bucketSec;
+    if (!cur || cur.time !== t0) {
+      if (cur) out.push(cur);
+      cur = { time: t0, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume || 0, oi: b.oi || 0 };
+    } else {
+      cur.high = Math.max(cur.high, b.high);
+      cur.low = Math.min(cur.low, b.low);
+      cur.close = b.close;
+      cur.volume = (cur.volume || 0) + (b.volume || 0);
+      if (b.oi) cur.oi = b.oi;
+    }
+  });
+  if (cur) out.push(cur);
+  return out;
+}
+
 window.onCandlesResponse = (ok, text) => {
   if (!ok) { setStatus(text, false); return; }
   try {
@@ -720,6 +758,11 @@ window.onCandlesResponse = (ok, text) => {
       });
     }
     history.sort((a, b) => a.time - b.time);
+    // Aggregate 60m bars to 2h/4h when user selected those intervals
+    let reqIv = (document.getElementById('interval') || {}).value || '5';
+    if (reqIv === '120' || reqIv === '240') {
+      history = aggregateBars(history, Number(reqIv));
+    }
     resizeChart();
     candles.setData(history);
     fullHistory = history.map(c => Object.assign({}, c));
