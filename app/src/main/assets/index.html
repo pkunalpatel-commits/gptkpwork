@@ -102,7 +102,6 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
         <option value="NSE_EQ">NSE_EQ (stock F&amp;O)</option>
         <option value="IDX_I">IDX_I (NSE index)</option>
         <option value="IDX_B">IDX_B (BSE index)</option>
-        <option value="MCX_COMM">MCX_COMM (commodity)</option>
       </select>
     </div>
     <button class="sec" type="button" onclick="loadExpiriesForSelected()">Load expiries for symbol</button>
@@ -215,6 +214,27 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
     <tbody id="oiTable"><tr><td colspan="4" style="text-align:center;color:#8fa0b8">Waiting for data…</td></tr></tbody>
   </table>
 </div>
+
+<details class="setup" id="alertPanel">
+  <summary>🔔 Watchlist · TO cross alerts</summary>
+  <div class="setup-body">
+    <button type="button" class="sec" onclick="addCurrentToWatchlist()">+ Add current contract</button>
+    <div id="watchlistBox" style="margin:8px 0;font-size:12px;color:#b8c4d8">Empty — load a contract then add</div>
+    <label>Telegram bot token</label>
+    <input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC...">
+    <label>Chat IDs (comma-separated, multiple OK)</label>
+    <input id="tgChats" type="text" placeholder="123456789, 987654321">
+    <label>Cooldown minutes per line (TO1/TO2/TO3)</label>
+    <input id="alertCooldown" type="number" min="1" max="60" value="3">
+    <div class="grid2" style="margin-top:8px">
+      <button type="button" onclick="startBgScan()">Start scan</button>
+      <button type="button" class="sec" onclick="stopBgScan()">Stop scan</button>
+    </div>
+    <div class="status" id="scanStatus">Scan off</div>
+    <p class="note" style="margin:6px 0 0">Foreground scan · one WebSocket · alert on LTP cross TO1/TO2/TO3 (positive-OI turnover). Levels saved from last chart top-3.</p>
+  </div>
+</details>
+
 <p class="note">Replay: scrub or play session; OI table & levels follow time. Chart: optional OI POC + Top 3 turnover lines (with tick marks). Settings auto-saved.</p>
 
 <script>
@@ -455,16 +475,6 @@ const UNDERLYINGS = [
   { id: 'WIPRO', label: 'WIPRO (NSE F&O Stock)', scrip: 3787, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
   { id: 'YESBANK', label: 'YESBANK (NSE F&O Stock)', scrip: 11915, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
   { id: 'ZYDUSLIFE', label: 'ZYDUSLIFE (NSE F&O Stock)', scrip: 7929, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' },
-  { id: 'CRUDEOIL', label: 'CRUDEOIL (MCX)', scrip: 573422, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'CRUDEOILM', label: 'CRUDEOIL Mini (MCX)', scrip: 573423, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'NATURALGAS', label: 'NATURALGAS (MCX)', scrip: 570750, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'NATGASMINI', label: 'NATGAS Mini (MCX)', scrip: 570751, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'GOLD', label: 'GOLD (MCX)', scrip: 495213, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'GOLDM', label: 'GOLD Mini (MCX)', scrip: 571445, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'SILVER', label: 'SILVER (MCX)', scrip: 495214, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'SILVERM', label: 'SILVER Mini (MCX)', scrip: 483080, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'COPPER', label: 'COPPER (MCX)', scrip: 574829, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
-  { id: 'ZINC', label: 'ZINC (MCX)', scrip: 574834, seg: 'MCX_COMM', optExch: 'MCX_COMM', instrument: 'OPTFUT' },
   { id: 'CUSTOM', label: 'Custom security ID…', scrip: 0, seg: 'NSE_EQ', optExch: 'NSE_FNO', instrument: 'OPTSTK' }
 ];
 
@@ -1101,7 +1111,12 @@ function drawProfile() {
       turnover[p] = Math.abs(Number(bins[k]) || 0) * (p + bucket / 2);
     });
   }
-  let keys = Object.keys(bins).map(Number).filter(k => isFinite(k) && bins[k] !== 0);
+  // Table: hide negative / zero ΔOI (show positive OI + turnover only)
+  let keys = Object.keys(bins).map(Number).filter(function(k) {
+    if (!isFinite(k)) return false;
+    if (metric === 'oi') return bins[k] > 0; // positive OI level only
+    return bins[k] > 0; // positive OI generated only
+  });
   let tbody = document.getElementById('oiTable');
   let showTable = document.getElementById('showTable').checked;
   document.getElementById('tableCard').classList.toggle('hidden', !showTable);
@@ -1508,9 +1523,108 @@ function loadSettings() {
 }
 
 
+
+// ===== Watchlist + TO cross alerts =====
+let watchlist = []; // {id,label,seg,to1,to2,to3,lastLtp}
+const WL_KEY = 'fno_watchlist_v1';
+const TG_KEY = 'fno_tg_v1';
+
+function loadWatchlist() {
+  try { watchlist = JSON.parse(localStorage.getItem(WL_KEY) || '[]'); } catch (e) { watchlist = []; }
+  try {
+    let tg = JSON.parse(localStorage.getItem(TG_KEY) || '{}');
+    if (tg.token && document.getElementById('tgToken')) document.getElementById('tgToken').value = tg.token;
+    if (tg.chats && document.getElementById('tgChats')) document.getElementById('tgChats').value = tg.chats;
+    if (tg.cooldown && document.getElementById('alertCooldown')) document.getElementById('alertCooldown').value = tg.cooldown;
+  } catch (e) {}
+  renderWatchlist();
+}
+
+function saveWatchlist() {
+  localStorage.setItem(WL_KEY, JSON.stringify(watchlist));
+  let tg = {
+    token: (document.getElementById('tgToken') || {}).value || '',
+    chats: (document.getElementById('tgChats') || {}).value || '',
+    cooldown: Number((document.getElementById('alertCooldown') || {}).value || 3)
+  };
+  localStorage.setItem(TG_KEY, JSON.stringify(tg));
+  renderWatchlist();
+}
+
+function renderWatchlist() {
+  let box = document.getElementById('watchlistBox');
+  if (!box) return;
+  if (!watchlist.length) {
+    box.innerHTML = 'Empty — load a contract then add';
+    return;
+  }
+  box.innerHTML = watchlist.map(function(w, i) {
+    return '<div style="padding:6px 0;border-bottom:1px solid #1a2738">' +
+      '<b>' + (w.label || w.id) + '</b> · TO ' + [w.to1,w.to2,w.to3].filter(function(x){return x!=null;}).join('/') +
+      ' <button type="button" class="sec" style="width:auto;padding:2px 8px;margin:0 0 0 8px" onclick="removeWatch(' + i + ')">✕</button></div>';
+  }).join('');
+}
+
+function removeWatch(i) {
+  watchlist.splice(i, 1);
+  saveWatchlist();
+}
+
+function addCurrentToWatchlist() {
+  if (!selected) { setStatus('Load a contract first.', false); return; }
+  let sid = selected.security_id || selected.securityId || selected.SecurityId;
+  if (!sid) { setStatus('No security id.', false); return; }
+  sid = String(sid);
+  let top = window._lastTop3 || [];
+  let label = (document.getElementById('contractInfo') || {}).textContent || sid;
+  let seg = (currentUnderlying && currentUnderlying.optExch) || 'NSE_FNO';
+  // replace if exists
+  watchlist = watchlist.filter(function(w) { return String(w.id) !== sid; });
+  watchlist.push({
+    id: sid,
+    label: label,
+    seg: seg,
+    to1: top[0] != null ? top[0] : null,
+    to2: top[1] != null ? top[1] : null,
+    to3: top[2] != null ? top[2] : null
+  });
+  saveWatchlist();
+  setStatus('Added to watchlist · TO levels ' + top.join(', '), true);
+}
+
+function startBgScan() {
+  saveWatchlist();
+  if (!watchlist.length) { setStatus('Watchlist empty.', false); return; }
+  let token = (document.getElementById('tgToken') || {}).value.trim();
+  let chats = (document.getElementById('tgChats') || {}).value.trim();
+  let cd = Number((document.getElementById('alertCooldown') || {}).value || 3);
+  if (!window.DhanBridge || !DhanBridge.startWatchScan) {
+    setStatus('Bridge missing startWatchScan.', false);
+    return;
+  }
+  DhanBridge.startWatchScan(JSON.stringify(watchlist), token, chats, cd);
+  let el = document.getElementById('scanStatus');
+  if (el) el.textContent = 'Scan ON · ' + watchlist.length + ' contracts';
+}
+
+function stopBgScan() {
+  if (window.DhanBridge && DhanBridge.stopWatchScan) DhanBridge.stopWatchScan();
+  let el = document.getElementById('scanStatus');
+  if (el) el.textContent = 'Scan off';
+  setStatus('Background scan stopped.', true);
+}
+
+window.onWatchAlert = function(msg) {
+  setStatus(msg, true);
+  let el = document.getElementById('scanStatus');
+  if (el) el.textContent = msg;
+};
+
+
 function boot() {
   try { populateUnderlyingSelect(); } catch (e) { console.error(e); }
   try { loadSettings(); } catch (e) {}
+  try { loadWatchlist(); } catch (e) {}
   initChart();
   // persist on changes
   document.addEventListener('change', function(ev) {

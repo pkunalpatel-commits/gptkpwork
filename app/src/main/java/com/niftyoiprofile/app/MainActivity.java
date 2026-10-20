@@ -1,6 +1,11 @@
 package com.niftyoiprofile.app;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.os.Build;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.ArrayList;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
@@ -35,6 +40,14 @@ public class MainActivity extends Activity {
     private volatile String clientId = "";
     private volatile String accessToken = "";
     private volatile String selectedSecurityId = "";
+    private volatile boolean watchScanActive = false;
+    private final Map<String, double[]> watchLevels = new HashMap<>();
+    private final Map<String, String> watchLabels = new HashMap<>();
+    private final Map<String, Double> lastLtpMap = new HashMap<>();
+    private final Map<String, Long> lastAlertAt = new HashMap<>();
+    private volatile String tgToken = "";
+    private volatile String[] tgChats = new String[0];
+    private volatile long alertCooldownMs = 3 * 60 * 1000L;
     private volatile String selectedSegment = "NSE_FNO";
     private volatile int underlyingScrip = 13;
     private volatile String underlyingSeg = "IDX_I";
@@ -319,7 +332,107 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void startWatchScan(String watchJson, String token, String chatsCsv, int cooldownMin) {
+            if (!ready()) return;
+            try {
+                tgToken = token != null ? token.trim() : "";
+                ArrayList<String> chats = new ArrayList<>();
+                if (chatsCsv != null) {
+                    for (String p : chatsCsv.split(",")) {
+                        String t = p.trim();
+                        if (!t.isEmpty()) chats.add(t);
+                    }
+                }
+                tgChats = chats.toArray(new String[0]);
+                alertCooldownMs = Math.max(1, cooldownMin) * 60L * 1000L;
+                watchLevels.clear();
+                watchLabels.clear();
+                lastLtpMap.clear();
+                JSONArray arr = new JSONArray(watchJson);
+                JSONArray list = new JSONArray();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject w = arr.getJSONObject(i);
+                    String id = String.valueOf(w.opt("id"));
+                    String seg = w.optString("seg", "NSE_FNO");
+                    String label = w.optString("label", id);
+                    double[] lv = new double[] {
+                        w.isNull("to1") ? Double.NaN : w.optDouble("to1", Double.NaN),
+                        w.isNull("to2") ? Double.NaN : w.optDouble("to2", Double.NaN),
+                        w.isNull("to3") ? Double.NaN : w.optDouble("to3", Double.NaN)
+                    };
+                    watchLevels.put(id, lv);
+                    watchLabels.put(id, label);
+                    JSONObject item = new JSONObject();
+                    item.put("ExchangeSegment", seg);
+                    item.put("SecurityId", id);
+                    list.put(item);
+                }
+                if (list.length() == 0) {
+                    status("Watchlist empty.", false);
+                    return;
+                }
+                watchScanActive = true;
+                Intent svc = new Intent(MainActivity.this, ScanService.class);
+                svc.putExtra("text", "Scanning " + list.length() + " contracts");
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
+                else startService(svc);
+
+                if (socket != null) {
+                    try { socket.close(1000, "resubscribe"); } catch (Exception ignored) {}
+                    socket = null;
+                }
+                String url = "wss://api-feed.dhan.co?version=2&token="
+                        + java.net.URLEncoder.encode(accessToken, java.nio.charset.StandardCharsets.UTF_8)
+                        + "&clientId=" + java.net.URLEncoder.encode(clientId, java.nio.charset.StandardCharsets.UTF_8)
+                        + "&authType=2";
+                final JSONArray instrumentList = list;
+                Request request = new Request.Builder().url(url).build();
+                socket = http.newWebSocket(request, new WebSocketListener() {
+                    @Override public void onOpen(WebSocket ws, Response response) {
+                        try {
+                            JSONObject sub = new JSONObject();
+                            sub.put("RequestCode", 21);
+                            sub.put("InstrumentCount", instrumentList.length());
+                            sub.put("InstrumentList", instrumentList);
+                            ws.send(sub.toString());
+                            status("Watch scan ON · " + instrumentList.length() + " instruments (Full feed)", true);
+                        } catch (Exception e) {
+                            status("Watch sub error: " + e.getMessage(), false);
+                        }
+                    }
+                    @Override public void onMessage(WebSocket ws, ByteString bytes) {
+                        parsePacket(bytes.toByteArray());
+                    }
+                    @Override public void onMessage(WebSocket ws, String text) {
+                        status("WS: " + text, true);
+                    }
+                    @Override public void onFailure(WebSocket ws, Throwable t, Response response) {
+                        status("Watch WS failed: " + t.getMessage(), false);
+                    }
+                    @Override public void onClosed(WebSocket ws, int code, String reason) {
+                        status("Watch WS closed: " + reason, false);
+                    }
+                });
+            } catch (Exception e) {
+                status("startWatchScan: " + e.getMessage(), false);
+            }
+        }
+
+        @JavascriptInterface
+        public void stopWatchScan() {
+            watchScanActive = false;
+            try { stopService(new Intent(MainActivity.this, ScanService.class)); } catch (Exception ignored) {}
+            if (socket != null) {
+                try { socket.close(1000, "stop scan"); } catch (Exception ignored) {}
+                socket = null;
+            }
+            status("Watch scan stopped.", true);
+        }
+
+        @JavascriptInterface
         public void disconnect() {
+            watchScanActive = false;
+            try { stopService(new Intent(MainActivity.this, ScanService.class)); } catch (Exception ignored) {}
             if (socket != null) {
                 socket.close(1000, "user disconnect");
                 socket = null;
@@ -344,6 +457,64 @@ public class MainActivity extends Activity {
      * Code 5 OI:    OI int @8
      * Code 8 Full:  LTP @8, volume @22, OI @34
      */
+
+    private void checkWatchCross(String sid, double ltp) {
+        double[] lv = watchLevels.get(sid);
+        if (lv == null) {
+            // try without type suffix issues
+            for (String k : watchLevels.keySet()) {
+                if (k.equals(sid) || k.equals(String.valueOf((long) Double.parseDouble(sid)))) {
+                    lv = watchLevels.get(k);
+                    sid = k;
+                    break;
+                }
+            }
+        }
+        if (lv == null) return;
+        Double prev = lastLtpMap.get(sid);
+        lastLtpMap.put(sid, ltp);
+        if (prev == null) return;
+        String label = watchLabels.containsKey(sid) ? watchLabels.get(sid) : sid;
+        String[] names = new String[] { "TO1", "TO2", "TO3" };
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < 3; i++) {
+            double level = lv[i];
+            if (Double.isNaN(level)) continue;
+            boolean crossed = (prev < level && ltp >= level) || (prev > level && ltp <= level);
+            if (!crossed) continue;
+            String key = sid + ":" + i;
+            Long last = lastAlertAt.get(key);
+            if (last != null && (now - last) < alertCooldownMs) continue;
+            lastAlertAt.put(key, now);
+            String msg = label + "\nLTP " + String.format(java.util.Locale.US, "%.2f", ltp)
+                    + " crossed " + names[i] + " ₹" + String.format(java.util.Locale.US, "%.0f", level);
+            status("ALERT " + names[i] + " · " + label, true);
+            js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg.replace("\n", " | ")) + ")");
+            sendTelegram(msg);
+        }
+    }
+
+    private void sendTelegram(final String text) {
+        if (tgToken == null || tgToken.isEmpty() || tgChats == null || tgChats.length == 0) return;
+        for (final String chat : tgChats) {
+            try {
+                String url = "https://api.telegram.org/bot" + tgToken + "/sendMessage";
+                JSONObject body = new JSONObject();
+                body.put("chat_id", chat);
+                body.put("text", text);
+                Request req = new Request.Builder().url(url)
+                        .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                        .build();
+                http.newCall(req).enqueue(new Callback() {
+                    @Override public void onFailure(Call call, IOException e) {}
+                    @Override public void onResponse(Call call, Response response) {
+                        if (response.body() != null) response.body().close();
+                    }
+                });
+            } catch (Exception ignored) {}
+        }
+    }
+
     private void parsePacket(byte[] packet) {
         try {
             if (packet == null || packet.length < 8) return;
@@ -376,6 +547,9 @@ public class MainActivity extends Activity {
                 if (!Double.isNaN(oi)) tick.put("oi", oi);
                 if (!Double.isNaN(volume)) tick.put("volume", volume);
                 js("window.onDhanTick && window.onDhanTick(" + tick.toString() + ")");
+                if (watchScanActive && !Double.isNaN(ltp)) {
+                    checkWatchCross(String.valueOf(sid), ltp);
+                }
             }
         } catch (Exception e) {
             status("Packet parse error: " + e.getMessage(), false);
@@ -384,6 +558,8 @@ public class MainActivity extends Activity {
 
     @Override
     public void onDestroy() {
+        watchScanActive = false;
+        try { stopService(new Intent(this, ScanService.class)); } catch (Exception ignored) {}
         if (socket != null) socket.close(1000, "app closed");
         if (http != null) http.dispatcher().cancelAll();
         webView = null;
