@@ -1131,8 +1131,12 @@ function recalcOverlays() {
     if (document.getElementById('pocOn') && document.getElementById('pocOn').checked) {
       addLevel(best, '#1ecf9a', 'OI POC ₹' + best, 'poc', 0, 3);
     }
-    let tKeys = keys.filter(k => (turnover[k] || 0) > 0)
-      .sort((a, b) => (turnover[b] || 0) - (turnover[a] || 0));
+    // Horizontal TO1/TO2/TO3: only positive ΔOI premiums (increased OI)
+    let tKeys = keys.filter(function(k) {
+      return (Number(bins[k]) || 0) > 0 && (turnover[k] || 0) > 0;
+    }).sort(function(a, b) {
+      return (turnover[b] || 0) - (turnover[a] || 0);
+    });
     let top3 = tKeys.slice(0, 3);
     let showTO = document.getElementById('toTop3On') && document.getElementById('toTop3On').checked;
     let ticks = document.getElementById('toTicksOn') && document.getElementById('toTicksOn').checked;
