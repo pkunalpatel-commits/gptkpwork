@@ -1138,7 +1138,7 @@ function recalcOverlays() {
     if (showTO && top3.length) {
       let colors = ['#ffc857', '#e8a838', '#c48920'];
       top3.forEach(function(p, i) {
-        let title = 'TO' + (i + 1) + ' ₹' + p;
+        let title = 'TO' + (i + 1) + ' ₹' + p + '–' + (p + bucket);
         // solid for #1, dashed for #2/#3 if ticks off; with ticks use solid + lastValueVisible
         let style = (i === 0) ? 0 : 2;
         let w = i === 0 ? 3 : 2;
@@ -1745,9 +1745,11 @@ function onDynamicTop3(top3) {
   if ((document.getElementById('alertLevelOn') || {}).checked) {
     for (let i = 0; i < 3; i++) {
       if (top3[i] != null && prev[i] != null && Number(top3[i]) !== Number(prev[i])) {
-        appLog('TO' + (i + 1) + ' level ' + prev[i] + ' → ' + top3[i] + ' · ' + (w.label || sid));
+        let bkt = Number((document.getElementById('bucket') || {}).value || 5);
+        appLog('TO' + (i + 1) + ' level ' + prev[i] + '-' + (Number(prev[i])+bkt) + ' → ' + top3[i] + '-' + (Number(top3[i])+bkt) + ' · ' + (w.label || sid));
         if (window.DhanBridge && DhanBridge.notifyLevelChange) {
-          DhanBridge.notifyLevelChange(sid, i + 1, Number(prev[i]), Number(top3[i]), w.label || sid);
+          let bkt = Number((document.getElementById('bucket') || {}).value || 5);
+          DhanBridge.notifyLevelChange(sid, i + 1, Number(prev[i]), Number(top3[i]), w.label || sid, bkt);
         }
       }
     }
@@ -1884,6 +1886,7 @@ function startBgScan() {
     return Object.assign({}, w, { crossOn: crossOn, levelOn: levelOn, levelCooldownMin: lcd });
   });
   DhanBridge.startWatchScan(JSON.stringify(payload), token, chats, cd);
+  if (DhanBridge.setWatchBucket) DhanBridge.setWatchBucket(Number((document.getElementById('bucket') || {}).value || 5));
   if (DhanBridge.setAlertFlags) DhanBridge.setAlertFlags(crossOn, levelOn, lcd);
   let el = document.getElementById('scanStatus');
   if (el) el.textContent = 'Scan ON · ' + watchlist.length + ' · TO refresh 5m';

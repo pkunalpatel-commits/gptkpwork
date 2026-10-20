@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
     private volatile boolean alertLevelEnabled = true;
     private final Map<String, Double> watchMinLtp = new HashMap<>();
     private final Map<String, Long> lastLevelAlertAt = new HashMap<>();
+    private volatile double watchBucket = 5;
     private volatile String selectedSegment = "NSE_FNO";
     private volatile int underlyingScrip = 13;
     private volatile String underlyingSeg = "IDX_I";
@@ -441,6 +442,11 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void setWatchBucket(double bucket) {
+            if (bucket > 0) watchBucket = bucket;
+        }
+
+        @JavascriptInterface
         public void setAlertFlags(boolean crossOn, boolean levelOn, int levelCooldownMin) {
             alertCrossEnabled = crossOn;
             alertLevelEnabled = levelOn;
@@ -460,16 +466,19 @@ public class MainActivity extends Activity {
         }
 
                 @JavascriptInterface
-        public void notifyLevelChange(String sid, int which, double from, double to, String label) {
+        public void notifyLevelChange(String sid, int which, double from, double to, String label, double bucket) {
             if (!alertLevelEnabled || !watchScanActive) return;
+            if (bucket > 0) watchBucket = bucket;
             String key = sid + ":L" + which;
             long now = System.currentTimeMillis();
             Long last = lastLevelAlertAt.get(key);
             if (last != null && (now - last) < levelCooldownMs) return;
             lastLevelAlertAt.put(key, now);
+            double b = bucket > 0 ? bucket : watchBucket;
+            String fromR = formatRange(from, b);
+            String toR = formatRange(to, b);
             String msg = (label != null ? label : sid) + " | TO" + which + " level "
-                    + String.format(java.util.Locale.US, "%.0f", from) + " -> "
-                    + String.format(java.util.Locale.US, "%.0f", to);
+                    + fromR + " -> " + toR;
             status("LEVEL TO" + which + " - " + label, true);
             js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg) + ")");
             sendTelegram(msg);
@@ -531,7 +540,7 @@ public class MainActivity extends Activity {
             if (last != null && (now - last) < alertCooldownMs) continue;
             lastAlertAt.put(key, now);
             String msg = label + " | LTP " + String.format(java.util.Locale.US, "%.2f", ltp)
-                    + " crossed " + names[i] + " Rs " + String.format(java.util.Locale.US, "%.0f", level);
+                    + " crossed " + names[i] + " Rs " + formatRange(level, watchBucket);
             status("ALERT " + names[i] + " · " + label, true);
             js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg) + ")");
             sendTelegram(msg);
