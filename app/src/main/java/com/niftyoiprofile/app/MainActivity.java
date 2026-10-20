@@ -467,13 +467,11 @@ public class MainActivity extends Activity {
             Long last = lastLevelAlertAt.get(key);
             if (last != null && (now - last) < levelCooldownMs) return;
             lastLevelAlertAt.put(key, now);
-            String msg = (label != null ? label : sid) + "
-TO" + which + " level " +
-                    String.format(java.util.Locale.US, "%.0f", from) + " → " +
-                    String.format(java.util.Locale.US, "%.0f", to);
+            String msg = (label != null ? label : sid) + " | TO" + which + " level "
+                    + String.format(java.util.Locale.US, "%.0f", from) + " -> "
+                    + String.format(java.util.Locale.US, "%.0f", to);
             status("LEVEL TO" + which + " · " + label, true);
-            js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg.replace("
-", " | ")) + ")");
+            js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg) + ")");
             sendTelegram(msg);
         }
 
