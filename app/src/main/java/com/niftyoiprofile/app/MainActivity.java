@@ -532,10 +532,10 @@ TO" + which + " level " +
             Long last = lastAlertAt.get(key);
             if (last != null && (now - last) < alertCooldownMs) continue;
             lastAlertAt.put(key, now);
-            String msg = label + "\nLTP " + String.format(java.util.Locale.US, "%.2f", ltp)
-                    + " crossed " + names[i] + " ₹" + String.format(java.util.Locale.US, "%.0f", level);
+            String msg = label + " | LTP " + String.format(java.util.Locale.US, "%.2f", ltp)
+                    + " crossed " + names[i] + " Rs " + String.format(java.util.Locale.US, "%.0f", level);
             status("ALERT " + names[i] + " · " + label, true);
-            js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg.replace("\n", " | ")) + ")");
+            js("window.onWatchAlert && window.onWatchAlert(" + JSONObject.quote(msg) + ")");
             sendTelegram(msg);
         }
     }
