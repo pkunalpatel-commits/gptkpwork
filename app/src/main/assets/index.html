@@ -1154,6 +1154,8 @@ function recalcOverlays() {
       return (turnover[b] || 0) - (turnover[a] || 0);
     });
     let top3 = tKeys.slice(0, 3);
+    window._lastTop3 = top3.map(Number);
+    try { onDynamicTop3(window._lastTop3); } catch (e) {}
     let showTO = document.getElementById('toTop3On') && document.getElementById('toTop3On').checked;
     let ticks = document.getElementById('toTicksOn') && document.getElementById('toTicksOn').checked;
     if (showTO && top3.length) {
@@ -1166,6 +1168,8 @@ function recalcOverlays() {
         addLevel(p, colors[i], title, 'to' + i, style, w);
       });
     }
+  } else {
+    window._lastTop3 = [];
   }
 }
 
@@ -1754,8 +1758,14 @@ function addCurrentToWatchlist() {
     lastTo: top.slice()
   });
   saveWatchlist();
-  appLog('Added ' + label + ' TO ' + top.join('/'));
-  setStatus('Added to watchlist.', true);
+  pushLevelsToNative(sid, top);
+  if (!top.length) {
+    appLog('WARN added ' + label + ' with NO TO levels — wait for positive OI profile then re-add or Force Refresh with chart open');
+    setStatus('Added but TO empty — need positive OI on chart first', false);
+  } else {
+    appLog('Added ' + label + ' TO ' + top.join('/'));
+    setStatus('Added to watchlist · TO ' + top.join('/'), true);
+  }
   pushLevelsToNative(sid, top);
 }
 

@@ -8,8 +8,8 @@ android {
         applicationId 'com.niftyoiprofile.app'
         minSdk 24
         targetSdk 35
-        versionCode 45
-        versionName '2.9.1'
+        versionCode 46
+        versionName '2.9.2'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
