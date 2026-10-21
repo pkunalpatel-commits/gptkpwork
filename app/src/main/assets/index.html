@@ -268,14 +268,23 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
       <label class="sw"><input id="alertLevelOn" type="checkbox" checked>TO level change</label>
     </div>
     <div class="grid2">
-      <button type="button" onclick="startBgScan()">Start scan</button>
+      <div>
+        <label>Refresh interval (min)</label>
+        <input id="refreshMin" type="number" min="1" max="60" value="5">
+      </div>
+      <div style="display:flex;align-items:flex-end">
+        <button type="button" class="sec" onclick="forceRefreshWatchlist()">Force Refresh Now</button>
+      </div>
+    </div>
+    <div class="grid2">
+      <button type="button" onclick="startBgScan()">Start scheduled scan</button>
       <button type="button" class="sec" onclick="stopBgScan()">Stop scan</button>
     </div>
-    <div class="status" id="scanStatus">Scan off</div>
+    <div class="status" id="scanStatus">Scan off · Option A (poll LTP)</div>
     <label>App activity log</label>
     <div id="appLog" style="height:120px;overflow:auto;background:#0a1422;border:1px solid var(--line);border-radius:6px;padding:6px;font-size:10px;color:#8fa0b8;font-family:monospace"></div>
     <button type="button" class="sec" onclick="clearAppLog()">Clear log</button>
-    <p class="note" style="margin:6px 0 0">Dynamic TO refresh every 5 min · FG WebSocket · positive-OI top3 · Dhan rate-aware bulk add.</p>
+    <p class="note" style="margin:6px 0 0">Option A: store TO1/TO2/TO3 + LTP · scheduled LTP poll · level-change & LTP-cross alerts · Force Refresh Now.</p>
   </div>
 </details>
 
@@ -1632,6 +1641,7 @@ function loadWatchlist() {
     if (typeof tg.levelOn === 'boolean' && document.getElementById('alertLevelOn')) document.getElementById('alertLevelOn').checked = tg.levelOn;
     if (tg.atmN && document.getElementById('atmN')) document.getElementById('atmN').value = tg.atmN;
     if (tg.minLtp != null && document.getElementById('minLtp')) document.getElementById('minLtp').value = tg.minLtp;
+    if (tg.refreshMin && document.getElementById('refreshMin')) document.getElementById('refreshMin').value = tg.refreshMin;
   } catch (e) {}
   renderWatchlist();
   renderExpiryTicks();
@@ -1648,7 +1658,8 @@ function saveWatchlist() {
     crossOn: !!(document.getElementById('alertCrossOn') || {}).checked,
     levelOn: !!(document.getElementById('alertLevelOn') || {}).checked,
     atmN: Number((document.getElementById('atmN') || {}).value || 5),
-    minLtp: Number((document.getElementById('minLtp') || {}).value || 0)
+    minLtp: Number((document.getElementById('minLtp') || {}).value || 0),
+    refreshMin: Number((document.getElementById('refreshMin') || {}).value || 5)
   };
   localStorage.setItem(TG_KEY, JSON.stringify(tg));
   renderWatchlist();
@@ -1739,6 +1750,7 @@ function addCurrentToWatchlist() {
     to2: top[1] != null ? top[1] : null,
     to3: top[2] != null ? top[2] : null,
     minLtp: minLtp > 0 ? minLtp : 0,
+    lastLtp: (typeof lastLtp === 'number' && isFinite(lastLtp)) ? lastLtp : null,
     lastTo: top.slice()
   });
   saveWatchlist();
@@ -1899,6 +1911,7 @@ function runBulkQueue() {
   }
 }
 
+
 function startBgScan() {
   saveWatchlist();
   if (!watchlist.length) { setStatus('Watchlist empty.', false); return; }
@@ -1908,41 +1921,166 @@ function startBgScan() {
   let lcd = Number((document.getElementById('levelCooldown') || {}).value || 5);
   let crossOn = !!(document.getElementById('alertCrossOn') || {}).checked;
   let levelOn = !!(document.getElementById('alertLevelOn') || {}).checked;
-  if (!window.DhanBridge || !DhanBridge.startWatchScan) {
-    setStatus('Bridge missing startWatchScan.', false);
-    return;
+  let every = Math.max(1, Number((document.getElementById('refreshMin') || {}).value || 5));
+
+  // Option A: no continuous multi-WS — scheduled LTP poll only (chart socket stays clean)
+  if (window.DhanBridge && DhanBridge.prepareWatchAlerts) {
+    DhanBridge.prepareWatchAlerts(JSON.stringify(watchlist), token, chats, cd, crossOn, levelOn, lcd);
+  } else if (window.DhanBridge && DhanBridge.setAlertFlags) {
+    DhanBridge.setAlertFlags(crossOn, levelOn, lcd);
   }
-  // attach flags into payload
-  let payload = watchlist.map(function(w) {
-    return Object.assign({}, w, { crossOn: crossOn, levelOn: levelOn, levelCooldownMin: lcd });
-  });
-  DhanBridge.startWatchScan(JSON.stringify(payload), token, chats, cd);
-  if (DhanBridge.setWatchBucket) DhanBridge.setWatchBucket(Number((document.getElementById('bucket') || {}).value || 5));
-  if (DhanBridge.setAlertFlags) DhanBridge.setAlertFlags(crossOn, levelOn, lcd);
-  let el = document.getElementById('scanStatus');
-  if (el) el.textContent = 'Scan ON · ' + watchlist.length + ' · TO refresh 5m';
-  appLog('Scan ON · ' + watchlist.length + ' instruments');
+
+  window._schedScanOn = true;
   if (levelRefreshTimer) clearInterval(levelRefreshTimer);
   levelRefreshTimer = setInterval(function() {
-    appLog('Dynamic TO tick (5m) — chart contract levels refreshed from live profile');
-    if (window._lastTop3 && window._lastTop3.length) onDynamicTop3(window._lastTop3);
-    // push all known levels to native
-    watchlist.forEach(function(w) {
-      pushLevelsToNative(w.id, [w.to1, w.to2, w.to3]);
-    });
-  }, 5 * 60 * 1000);
+    if (!window._schedScanOn) return;
+    appLog('Scheduled refresh (' + every + 'm)…');
+    forceRefreshWatchlist();
+  }, every * 60 * 1000);
+
+  let el = document.getElementById('scanStatus');
+  if (el) el.textContent = 'Scan ON · every ' + every + 'm · ' + watchlist.length + ' contracts';
+  appLog('Scheduled scan ON · interval ' + every + ' min · store TO1/TO2/TO3 + LTP');
+  forceRefreshWatchlist(); // immediate first pass
 }
 
 function stopBgScan() {
+  window._schedScanOn = false;
   if (levelRefreshTimer) { clearInterval(levelRefreshTimer); levelRefreshTimer = null; }
-  if (window.DhanBridge && DhanBridge.stopWatchScan) DhanBridge.stopWatchScan();
+  if (window.DhanBridge && DhanBridge.disarmWatchAlerts) {
+    try { DhanBridge.disarmWatchAlerts(); } catch (e) {}
+  }
   let el = document.getElementById('scanStatus');
-  if (el) el.textContent = 'Scan off';
-  appLog('Scan OFF');
-  setStatus('Background scan stopped.', true);
+  if (el) el.textContent = 'Scan off · Option A (poll LTP)';
+  appLog('Scheduled scan OFF');
+  setStatus('Scheduled scan stopped.', true);
 }
 
-window.onWatchAlert = function(msg) {
+function forceRefreshWatchlist() {
+  saveWatchlist();
+  if (!watchlist.length) {
+    setStatus('Watchlist empty.', false);
+    return;
+  }
+  if (!window.DhanBridge || !DhanBridge.refreshWatchLtps) {
+    setStatus('Bridge missing refreshWatchLtps.', false);
+    appLog('ERR no refreshWatchLtps');
+    return;
+  }
+  // Ensure native has latest stored levels + flags
+  let token = ((document.getElementById('tgToken') || {}).value || '').trim();
+  let chats = ((document.getElementById('tgChats') || {}).value || '').trim();
+  let cd = Number((document.getElementById('alertCooldown') || {}).value || 3);
+  let lcd = Number((document.getElementById('levelCooldown') || {}).value || 5);
+  let crossOn = !!(document.getElementById('alertCrossOn') || {}).checked;
+  let levelOn = !!(document.getElementById('alertLevelOn') || {}).checked;
+  if (DhanBridge.prepareWatchAlerts) {
+    DhanBridge.prepareWatchAlerts(JSON.stringify(watchlist), token, chats, cd, crossOn, levelOn, lcd);
+  }
+  // Push current chart top3 into matching watch row before poll
+  try {
+    if (selected && window._lastTop3 && window._lastTop3.length) {
+      let sid = String(selected.security_id || selected.securityId || selected.SecurityId || '');
+      if (sid) onDynamicTop3(window._lastTop3);
+    }
+  } catch (e) {}
+  appLog('Force refresh LTP for ' + watchlist.length + '…');
+  DhanBridge.refreshWatchLtps(JSON.stringify(watchlist.map(function(w) {
+    return { id: w.id, seg: w.seg || 'NSE_FNO', to1: w.to1, to2: w.to2, to3: w.to3, lastLtp: w.lastLtp, label: w.label, minLtp: w.minLtp };
+  })));
+  let el = document.getElementById('scanStatus');
+  if (el && window._schedScanOn) el.textContent = 'Refreshing… · ' + watchlist.length;
+}
+
+/** Native returns map of securityId -> last_price */
+window.onWatchLtpRefresh = function(ok, text) {
+  if (!ok) {
+    appLog('ERR LTP refresh: ' + text);
+    setStatus('LTP refresh failed: ' + text, false);
+    return;
+  }
+  try {
+    let j = JSON.parse(text);
+    let data = j.data || j;
+    // data shape: { "NSE_FNO": { "123": { last_price: 12.5 }, ... } } or flat
+    let priceById = {};
+    function ingest(obj) {
+      if (!obj || typeof obj !== 'object') return;
+      Object.keys(obj).forEach(function(k) {
+        let v = obj[k];
+        if (v && typeof v === 'object') {
+          if (v.last_price != null || v.lastPrice != null || v.LTP != null) {
+            priceById[String(k)] = Number(v.last_price != null ? v.last_price : (v.lastPrice != null ? v.lastPrice : v.LTP));
+          } else {
+            ingest(v); // nested segment map
+          }
+        }
+      });
+    }
+    ingest(data);
+    let n = 0;
+    watchlist.forEach(function(w) {
+      let id = String(w.id);
+      let newLtp = priceById[id];
+      if (newLtp == null || !isFinite(newLtp)) return;
+      n++;
+      let prev = (w.lastLtp != null && isFinite(w.lastLtp)) ? Number(w.lastLtp) : null;
+      let minL = Number(w.minLtp || 0);
+      // Level change already handled in onDynamicTop3; here only LTP cross vs stored TO1/TO2/TO3
+      if ((document.getElementById('alertCrossOn') || {}).checked) {
+        if (minL <= 0 || newLtp >= minL) {
+          checkLtpCrossLocal(w, prev, newLtp);
+        }
+      }
+      w.lastLtp = newLtp;
+    });
+    saveWatchlist();
+    appLog('LTP refresh OK · updated ' + n + '/' + watchlist.length);
+    setStatus('LTP refresh · ' + n + ' prices', true);
+    let el = document.getElementById('scanStatus');
+    if (el && window._schedScanOn) {
+      let every = Math.max(1, Number((document.getElementById('refreshMin') || {}).value || 5));
+      el.textContent = 'Scan ON · every ' + every + 'm · last refresh OK';
+    }
+  } catch (e) {
+    appLog('ERR parse LTP: ' + e);
+    setStatus('LTP parse error: ' + e, false);
+  }
+};
+
+function checkLtpCrossLocal(w, prev, newLtp) {
+  if (prev == null || !isFinite(prev)) return;
+  let levels = [
+    { name: 'TO1', v: w.to1 },
+    { name: 'TO2', v: w.to2 },
+    { name: 'TO3', v: w.to3 }
+  ];
+  let bkt = Number((document.getElementById('bucket') || {}).value || 5);
+  let cdMin = Number((document.getElementById('alertCooldown') || {}).value || 3);
+  if (!window._crossCool) window._crossCool = {};
+  let now = Date.now();
+  levels.forEach(function(L, i) {
+    if (L.v == null || !isFinite(L.v)) return;
+    let level = Number(L.v);
+    let crossed = (prev < level && newLtp >= level) || (prev > level && newLtp <= level);
+    if (!crossed) return;
+    let key = String(w.id) + ':' + i;
+    if (window._crossCool[key] && (now - window._crossCool[key]) < cdMin * 60 * 1000) return;
+    window._crossCool[key] = now;
+    let range = level + '-' + (level + bkt);
+    let msg = (w.label || w.id) + ' | LTP ' + newLtp.toFixed(2) + ' crossed ' + L.name + ' Rs ' + range;
+    appLog('ALERT ' + msg);
+    setStatus(msg, true);
+    if (window.DhanBridge && DhanBridge.sendWatchTelegram) {
+      DhanBridge.sendWatchTelegram(msg);
+    } else if (window.DhanBridge && DhanBridge.notifyLevelChange) {
+      // fallback: use native telegram path via a dedicated call
+    }
+    if (window.onWatchAlert) window.onWatchAlert(msg);
+  });
+}
+
+window.onWatchAlertwindow.onWatchAlert = function(msg) {
   setStatus(msg, true);
   appLog('ALERT ' + msg);
   let el = document.getElementById('scanStatus');

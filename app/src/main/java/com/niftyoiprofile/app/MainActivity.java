@@ -337,6 +337,92 @@ public class MainActivity extends Activity {
             }
         }
 
+
+        @JavascriptInterface
+        public void prepareWatchAlerts(String watchJson, String token, String chatsCsv, int cooldownMin,
+                                       boolean crossOn, boolean levelOn, int levelCooldownMin) {
+            try {
+                tgToken = token != null ? token.trim() : "";
+                ArrayList<String> chats = new ArrayList<>();
+                if (chatsCsv != null) {
+                    for (String p : chatsCsv.split(",")) {
+                        String t = p.trim();
+                        if (!t.isEmpty()) chats.add(t);
+                    }
+                }
+                tgChats = chats.toArray(new String[0]);
+                alertCooldownMs = Math.max(1, cooldownMin) * 60L * 1000L;
+                alertCrossEnabled = crossOn;
+                alertLevelEnabled = levelOn;
+                levelCooldownMs = Math.max(1, levelCooldownMin) * 60L * 1000L;
+                watchScanActive = true; // enables level-change notify path
+                watchLevels.clear();
+                watchLabels.clear();
+                watchMinLtp.clear();
+                JSONArray arr = new JSONArray(watchJson);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject w = arr.getJSONObject(i);
+                    String id = String.valueOf(w.opt("id"));
+                    String label = w.optString("label", id);
+                    double[] lv = new double[] {
+                        w.isNull("to1") ? Double.NaN : w.optDouble("to1", Double.NaN),
+                        w.isNull("to2") ? Double.NaN : w.optDouble("to2", Double.NaN),
+                        w.isNull("to3") ? Double.NaN : w.optDouble("to3", Double.NaN)
+                    };
+                    watchLevels.put(id, lv);
+                    watchLabels.put(id, label);
+                    double minL = w.optDouble("minLtp", 0);
+                    if (minL > 0) watchMinLtp.put(id, minL);
+                }
+                status("Watch alerts armed · " + arr.length() + " (scheduled LTP mode)", true);
+            } catch (Exception e) {
+                status("prepareWatchAlerts: " + e.getMessage(), false);
+            }
+        }
+
+        @JavascriptInterface
+        public void refreshWatchLtps(String watchJson) {
+            if (!ready()) return;
+            try {
+                JSONArray arr = new JSONArray(watchJson);
+                // Group security ids by exchange segment for Dhan marketfeed/ltp
+                java.util.LinkedHashMap<String, JSONArray> bySeg = new java.util.LinkedHashMap<>();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject w = arr.getJSONObject(i);
+                    String id = String.valueOf(w.opt("id"));
+                    String seg = w.optString("seg", "NSE_FNO");
+                    if (!bySeg.containsKey(seg)) bySeg.put(seg, new JSONArray());
+                    // Dhan expects integer security ids in array
+                    try {
+                        bySeg.get(seg).put(Integer.parseInt(id));
+                    } catch (Exception e) {
+                        bySeg.get(seg).put(id);
+                    }
+                }
+                JSONObject body = new JSONObject();
+                for (java.util.Map.Entry<String, JSONArray> e : bySeg.entrySet()) {
+                    body.put(e.getKey(), e.getValue());
+                }
+                postJson("https://api.dhan.co/v2/marketfeed/ltp", body, "window.onWatchLtpRefresh");
+            } catch (Exception e) {
+                status("refreshWatchLtps: " + e.getMessage(), false);
+                js("window.onWatchLtpRefresh && window.onWatchLtpRefresh(false," + JSONObject.quote(e.getMessage()) + ")");
+            }
+        }
+
+        @JavascriptInterface
+        public void disarmWatchAlerts() {
+            watchScanActive = false;
+            status("Watch alerts disarmed (chart socket kept).", true);
+        }
+
+        @JavascriptInterface
+        public void sendWatchTelegram(String text) {
+            if (text == null || text.isEmpty()) return;
+            sendTelegram(text);
+            status("Telegram: " + text, true);
+        }
+
         @JavascriptInterface
         public void startWatchScan(String watchJson, String token, String chatsCsv, int cooldownMin) {
             if (!ready()) return;
