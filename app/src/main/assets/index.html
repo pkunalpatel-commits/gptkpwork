@@ -200,6 +200,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
+  <label class="sw"><input type="radio" name="metric" value="doi_up">OI up only (Σ+ΔOI)</label>
   <label class="sw"><input type="radio" name="metric" value="oi">OI level</label>
   <label class="sw"><input id="showTable" type="checkbox" checked>Show OI table</label>
 </div>
@@ -1087,11 +1088,12 @@ function buildBins() {
     if (metric === 'oi') {
       bins[p] = oi; // latest absolute OI at premium
     } else if (metric === 'doi_up') {
-      if (doi > 0) bins[p] = (bins[p] || 0) + doi; // increase only
+      // User formula: Profile[bin] = SUM(positive ΔOI only) for samples in that premium bin
+      if (doi > 0) bins[p] = (bins[p] || 0) + doi;
     } else if (metric === 'doi_down') {
       if (doi < 0) bins[p] = (bins[p] || 0) + doi; // decrease only (negative)
     } else {
-      // doi — keep BOTH increase and decrease (never remove)
+      // doi — net: sum of + and − ΔOI
       bins[p] = (bins[p] || 0) + doi;
     }
     let t = Number(s.time) || 0;
@@ -1212,7 +1214,7 @@ function drawProfile() {
     ? tKeys.reduce((a, b) => turnover[b] > turnover[a] ? b : a, tKeys[0])
     : best;
   document.getElementById('poc').textContent = '₹' + best;
-  let modeLabel = metric === 'oi' ? 'OI LEVEL' : metric === 'doi_up' ? 'OI UP' : metric === 'doi_down' ? 'OI DOWN' : 'ΔOI ±';
+  let modeLabel = metric === 'oi' ? 'OI LEVEL' : metric === 'doi_up' ? 'OI UP Σ+' : metric === 'doi_down' ? 'OI DOWN' : 'ΔOI ±';
   document.getElementById('profiletitle').textContent = modeLabel + ' · POC ₹' + best + ' · Max TO ₹' + bestTO;
 
   let sortBy = tableSortBy || 'premium';
@@ -1558,6 +1560,10 @@ function loadSettings() {
     setChk('toTicksOn', o.toTicksOn);
     setChk('showTable', o.showTable);
     if (o.bucket && document.getElementById('bucket')) document.getElementById('bucket').value = o.bucket;
+    if (o.metric) {
+      let m = document.querySelector('input[name=metric][value="' + o.metric + '"]');
+      if (m) m.checked = true;
+    }
     if (o.interval && document.getElementById('interval')) document.getElementById('interval').value = o.interval;
     if (o.side && document.getElementById('side')) document.getElementById('side').value = o.side;
     if (o.metric) {
