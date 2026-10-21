@@ -867,6 +867,13 @@ window.onCandlesResponse = (ok, text) => {
 window.onDhanTick = t => {
   if (!selected) return;
   if (replayMode && replayPlaying) return; // ignore live while playing replay
+  // BUGFIX: multi-instrument watch scan shares one WebSocket.
+  // Only the *selected* contract may update chart / OI profile / lastOi.
+  // Other watchlist ticks are handled in native checkWatchCross only.
+  let chartSid = selected.security_id || selected.securityId || selected.SecurityId;
+  if (chartSid != null && t.securityId != null && String(t.securityId) !== String(chartSid)) {
+    return;
+  }
   if (t.ltp !== undefined && isFinite(t.ltp)) {
     lastLtp = Number(t.ltp);
     document.getElementById('ltp').textContent = '₹' + lastLtp.toFixed(2);

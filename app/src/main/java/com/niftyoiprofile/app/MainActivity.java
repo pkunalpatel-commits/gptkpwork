@@ -383,6 +383,22 @@ public class MainActivity extends Activity {
                     status("Watchlist empty.", false);
                     return;
                 }
+                // Keep chart contract on the same socket so live chart still gets ticks
+                if (selectedSecurityId != null && !selectedSecurityId.isEmpty()) {
+                    boolean hasSel = false;
+                    for (int i = 0; i < list.length(); i++) {
+                        if (selectedSecurityId.equals(String.valueOf(list.getJSONObject(i).opt("SecurityId")))) {
+                            hasSel = true;
+                            break;
+                        }
+                    }
+                    if (!hasSel) {
+                        JSONObject item = new JSONObject();
+                        item.put("ExchangeSegment", selectedSegment != null ? selectedSegment : "NSE_FNO");
+                        item.put("SecurityId", selectedSecurityId);
+                        list.put(item);
+                    }
+                }
                 watchScanActive = true;
                 Intent svc = new Intent(MainActivity.this, ScanService.class);
                 svc.putExtra("text", "Scanning " + list.length() + " contracts");
@@ -439,6 +455,10 @@ public class MainActivity extends Activity {
                 socket = null;
             }
             status("Watch scan stopped.", true);
+            // Restore single-contract feed for open chart
+            if (selectedSecurityId != null && !selectedSecurityId.isEmpty()) {
+                connectContract(selectedSecurityId);
+            }
         }
 
         @JavascriptInterface
