@@ -197,6 +197,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <label class="sw"><input id="pocOn" type="checkbox" checked>OI POC (latest)</label>
   <label class="sw"><input id="toTop3On" type="checkbox" checked>Top 3 turnover</label>
   <label class="sw"><input id="toTicksOn" type="checkbox" checked>TO tick marks</label>
+  <label class="sw"><input id="toSumUpOn" type="checkbox">TO from Σ+ΔOI only</label>
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
@@ -1149,11 +1150,30 @@ function recalcOverlays() {
     if (document.getElementById('pocOn') && document.getElementById('pocOn').checked) {
       addLevel(best, '#1ecf9a', 'OI POC ₹' + best, 'poc', 0, 3);
     }
-    // Horizontal TO1/TO2/TO3: only positive ΔOI premiums (increased OI)
-    let tKeys = keys.filter(function(k) {
-      return (Number(bins[k]) || 0) > 0 && (turnover[k] || 0) > 0;
+    // TO lines: default = positive bins from active metric turnover
+    // Option D tick: force Σ+ΔOI profile + weight = center × Σ(+ΔOI)
+    let useSumUp = document.getElementById('toSumUpOn') && document.getElementById('toSumUpOn').checked;
+    let rankBins = bins;
+    let rankTO = turnover;
+    if (useSumUp) {
+      rankBins = {};
+      rankTO = {};
+      profileSamples.forEach(function(s) {
+        let p = Math.floor(Number(s.price) / bucket) * bucket;
+        if (!isFinite(p)) return;
+        let doi = Number(s.doi) || 0;
+        if (doi > 0) rankBins[p] = (rankBins[p] || 0) + doi;
+      });
+      Object.keys(rankBins).forEach(function(k) {
+        let p = Number(k);
+        let center = p + bucket / 2; // Price_Bin_Center
+        rankTO[p] = (Number(rankBins[p]) || 0) * center; // Weighted_Value
+      });
+    }
+    let tKeys = Object.keys(rankBins).map(Number).filter(function(k) {
+      return (Number(rankBins[k]) || 0) > 0 && (rankTO[k] || 0) > 0;
     }).sort(function(a, b) {
-      return (turnover[b] || 0) - (turnover[a] || 0);
+      return (rankTO[b] || 0) - (rankTO[a] || 0);
     });
     let top3 = tKeys.slice(0, 3);
     window._lastTop3 = top3.map(Number);
@@ -1334,7 +1354,7 @@ function onOverlayToggle() {
   saveSettings();
 }
 
-['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'bucket', 'showTable'].forEach(id => {
+['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'toSumUpOn', 'bucket', 'showTable'].forEach(id => {
   document.getElementById(id).addEventListener('change', onOverlayToggle);
 });
 document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', onOverlayToggle));
@@ -1527,6 +1547,7 @@ function saveSettings() {
       ibOn: !!(document.getElementById('ibOn') || {}).checked,
       pocOn: !!(document.getElementById('pocOn') || {}).checked,
       toTop3On: !!(document.getElementById('toTop3On') || {}).checked,
+      toSumUpOn: !!(document.getElementById('toSumUpOn') || {}).checked,
       toTicksOn: !!(document.getElementById('toTicksOn') || {}).checked,
       showTable: !!(document.getElementById('showTable') || {}).checked,
       bucket: (document.getElementById('bucket') || {}).value || '5',
@@ -1557,6 +1578,7 @@ function loadSettings() {
     setChk('ibOn', o.ibOn);
     setChk('pocOn', o.pocOn);
     setChk('toTop3On', o.toTop3On);
+    setChk('toSumUpOn', o.toSumUpOn);
     setChk('toTicksOn', o.toTicksOn);
     setChk('showTable', o.showTable);
     if (o.bucket && document.getElementById('bucket')) document.getElementById('bucket').value = o.bucket;
