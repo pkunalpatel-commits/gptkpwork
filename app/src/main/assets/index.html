@@ -198,7 +198,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <label class="sw"><input id="toTop3On" type="checkbox" checked>Top 3 turnover</label>
   <label class="sw"><input id="toTicksOn" type="checkbox" checked>TO tick marks</label>
   <label class="sw"><input id="toSumUpOn" type="checkbox">TO from Σ+ΔOI only</label>
-  <label class="sw"><input id="fvgOn" type="checkbox" checked>Open FVG (0.25 ATR, last 5)</label>
+  <label class="sw"><input id="fvgOn" type="checkbox" checked>HQ open FVG (low noise)</label>
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
@@ -1129,16 +1129,35 @@ function computeATR(bars, period) {
   return sum / n;
 }
 
-/** Open FVGs only · min 0.25 ATR · last 5 */
+/**
+ * High-quality open FVGs only (low noise):
+ * - gap >= max(0.5 * ATR, 0.35% of price, 1.0)
+ * - middle candle must be impulsive (body >= 55% of range, direction matches)
+ * - middle range >= 0.8 * ATR (real displacement)
+ * - still unfilled (strict: touch of far boundary = filled)
+ * - only nearest 2 to current price (not just last 5 by time)
+ * - draw mid line only (less clutter)
+ */
 function detectOpenFVGs(bars) {
   let out = [];
-  if (!bars || bars.length < 3) return out;
+  if (!bars || bars.length < 5) return out;
   let atr = computeATR(bars, 14);
-  let minGap = Math.max(atr * 0.25, 1e-6);
+  if (!(atr > 0)) return out;
+  let last = bars[bars.length - 1];
+  let px = last.close || last.high || 0;
+  let minGap = Math.max(atr * 0.5, px * 0.0035, 1.0);
+
   for (let i = 1; i < bars.length - 1; i++) {
     let c0 = bars[i - 1], c1 = bars[i], c2 = bars[i + 1];
-    // Bullish: L2 > H0
-    if (c2.low > c0.high) {
+    let range1 = c1.high - c1.low;
+    if (!(range1 > 0)) continue;
+    let body1 = Math.abs(c1.close - c1.open);
+    let bodyRatio = body1 / range1;
+    // need real impulse middle bar
+    if (bodyRatio < 0.55 || range1 < atr * 0.8) continue;
+
+    // Bullish FVG: up impulse + gap
+    if (c1.close > c1.open && c2.low > c0.high) {
       let lo = c0.high, hi = c2.low;
       let g = hi - lo;
       if (g >= minGap) {
@@ -1146,11 +1165,16 @@ function detectOpenFVGs(bars) {
         for (let j = i + 2; j < bars.length; j++) {
           if (bars[j].low <= lo) { filled = true; break; }
         }
-        if (!filled) out.push({ type: 'bull', low: lo, high: hi, mid: (lo + hi) / 2, t: c1.time, gap: g });
+        if (!filled) {
+          out.push({
+            type: 'bull', low: lo, high: hi, mid: (lo + hi) / 2,
+            t: c1.time, gap: g, dist: Math.abs(px - (lo + hi) / 2)
+          });
+        }
       }
     }
-    // Bearish: H2 < L0
-    if (c2.high < c0.low) {
+    // Bearish FVG: down impulse + gap
+    if (c1.close < c1.open && c2.high < c0.low) {
       let hi = c0.low, lo = c2.high;
       let g = hi - lo;
       if (g >= minGap) {
@@ -1158,27 +1182,30 @@ function detectOpenFVGs(bars) {
         for (let j = i + 2; j < bars.length; j++) {
           if (bars[j].high >= hi) { filled = true; break; }
         }
-        if (!filled) out.push({ type: 'bear', low: lo, high: hi, mid: (lo + hi) / 2, t: c1.time, gap: g });
+        if (!filled) {
+          out.push({
+            type: 'bear', low: lo, high: hi, mid: (lo + hi) / 2,
+            t: c1.time, gap: g, dist: Math.abs(px - (lo + hi) / 2)
+          });
+        }
       }
     }
   }
-  // last 5 by time (most recent)
-  out.sort(function(a, b) { return a.t - b.t; });
-  if (out.length > 5) out = out.slice(out.length - 5);
+  // Prefer gaps closest to current price; max 2 total
+  out.sort(function(a, b) { return a.dist - b.dist; });
+  if (out.length > 2) out = out.slice(0, 2);
   return out;
 }
 
 function drawFVGOverlays() {
   if (!(document.getElementById('fvgOn') || {}).checked) return;
-  if (!history || history.length < 3) return;
+  if (!history || history.length < 5) return;
   let fvgs = detectOpenFVGs(history);
   fvgs.forEach(function(f, idx) {
     let col = f.type === 'bull' ? '#26a69a' : '#ef5350';
-    let tag = (f.type === 'bull' ? 'bFVG' : 'sFVG') + (idx + 1);
-    // zone bounds as horizontal lines (open only)
-    addLevel(f.low, col, tag + ' lo', 'fvg', 2, 1);
-    addLevel(f.high, col, tag + ' hi', 'fvg', 2, 1);
-    addLevel(f.mid, col, tag + ' mid', 'fvg', 1, 1);
+    let tag = f.type === 'bull' ? 'FVG+' : 'FVG-';
+    // single mid line only — low noise
+    addLevel(f.mid, col, tag + ' ' + f.low.toFixed(0) + '-' + f.high.toFixed(0), 'fvg', 0, 2);
   });
 }
 
