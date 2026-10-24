@@ -199,6 +199,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <label class="sw"><input id="toTicksOn" type="checkbox" checked>TO tick marks</label>
   <label class="sw"><input id="toSumUpOn" type="checkbox">TO from Σ+ΔOI only</label>
   <label class="sw"><input id="fvgOn" type="checkbox" checked>HQ open FVG (low noise)</label>
+  <label class="sw"><input id="obOn" type="checkbox" checked>HQ OB + sweep (max 2)</label>
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
@@ -1209,6 +1210,159 @@ function drawFVGOverlays() {
   });
 }
 
+
+/** Swing pivots with half-window k (k=3 → 7-bar pivot) */
+function findPivots(bars, k) {
+  k = k || 3;
+  let highs = [], lows = [];
+  if (!bars || bars.length < k * 2 + 1) return { highs: highs, lows: lows };
+  for (let i = k; i < bars.length - k; i++) {
+    let isH = true, isL = true;
+    for (let j = 1; j <= k; j++) {
+      if (!(bars[i].high > bars[i - j].high && bars[i].high > bars[i + j].high)) isH = false;
+      if (!(bars[i].low < bars[i - j].low && bars[i].low < bars[i + j].low)) isL = false;
+    }
+    if (isH) highs.push({ i: i, price: bars[i].high, t: bars[i].time });
+    if (isL) lows.push({ i: i, price: bars[i].low, t: bars[i].time });
+  }
+  return { highs: highs, lows: lows };
+}
+
+/**
+ * HQ Order Block + liquidity sweep
+ * - pivot k=3
+ * - wick sweep + close back
+ * - displacement within 3 bars (range >= 0.8 ATR, body ratio >= 0.55)
+ * - OB = body of last opposite candle before impulse
+ * - open only; max 2 nearest to LTP
+ */
+function detectHQOrderBlocks(bars) {
+  let out = [];
+  if (!bars || bars.length < 20) return out;
+  let atr = computeATR(bars, 14);
+  if (!(atr > 0)) return out;
+  let piv = findPivots(bars, 3);
+  let last = bars[bars.length - 1];
+  let px = last.close || 0;
+
+  function bodyOf(c) {
+    return { lo: Math.min(c.open, c.close), hi: Math.max(c.open, c.close) };
+  }
+
+  // --- Sweep highs → bearish OB ---
+  piv.highs.forEach(function(sw) {
+    for (let t = sw.i + 1; t < bars.length; t++) {
+      let c = bars[t];
+      let pen = c.high - sw.price;
+      if (pen < atr * 0.1) continue;
+      if (!(c.high > sw.price && c.close < sw.price)) continue;
+      // displacement down in next 1–3 bars
+      let impEnd = -1;
+      for (let d = 1; d <= 3 && t + d < bars.length; d++) {
+        let b = bars[t + d];
+        let range = b.high - b.low;
+        let body = Math.abs(b.close - b.open);
+        if (range >= atr * 0.8 && body / range >= 0.55 && b.close < b.open) {
+          impEnd = t + d;
+          break;
+        }
+      }
+      if (impEnd < 0) continue;
+      // last bullish candle before impulse start (search back from impEnd toward t)
+      let obIdx = -1;
+      for (let j = impEnd - 1; j >= Math.max(0, t - 5); j--) {
+        if (bars[j].close > bars[j].open) { obIdx = j; break; }
+      }
+      if (obIdx < 0) continue;
+      let bd = bodyOf(bars[obIdx]);
+      if (bd.hi - bd.lo < atr * 0.25) continue;
+      // mitigated if later close above OB high
+      let filled = false;
+      for (let j = impEnd + 1; j < bars.length; j++) {
+        if (bars[j].close > bd.hi) { filled = true; break; }
+      }
+      if (filled) continue;
+      out.push({
+        type: 'bear', lo: bd.lo, hi: bd.hi, mid: (bd.lo + bd.hi) / 2,
+        t0: bars[obIdx].time, t1: bars[Math.min(obIdx + 1, bars.length - 1)].time,
+        dist: Math.abs(px - (bd.lo + bd.hi) / 2),
+        sweepP: sw.price
+      });
+      break; // one sweep event per pivot
+    }
+  });
+
+  // --- Sweep lows → bullish OB ---
+  piv.lows.forEach(function(sw) {
+    for (let t = sw.i + 1; t < bars.length; t++) {
+      let c = bars[t];
+      let pen = sw.price - c.low;
+      if (pen < atr * 0.1) continue;
+      if (!(c.low < sw.price && c.close > sw.price)) continue;
+      let impEnd = -1;
+      for (let d = 1; d <= 3 && t + d < bars.length; d++) {
+        let b = bars[t + d];
+        let range = b.high - b.low;
+        let body = Math.abs(b.close - b.open);
+        if (range >= atr * 0.8 && body / range >= 0.55 && b.close > b.open) {
+          impEnd = t + d;
+          break;
+        }
+      }
+      if (impEnd < 0) continue;
+      let obIdx = -1;
+      for (let j = impEnd - 1; j >= Math.max(0, t - 5); j--) {
+        if (bars[j].close < bars[j].open) { obIdx = j; break; }
+      }
+      if (obIdx < 0) continue;
+      let bd = bodyOf(bars[obIdx]);
+      if (bd.hi - bd.lo < atr * 0.25) continue;
+      let filled = false;
+      for (let j = impEnd + 1; j < bars.length; j++) {
+        if (bars[j].close < bd.lo) { filled = true; break; }
+      }
+      if (filled) continue;
+      out.push({
+        type: 'bull', lo: bd.lo, hi: bd.hi, mid: (bd.lo + bd.hi) / 2,
+        t0: bars[obIdx].time, t1: bars[Math.min(obIdx + 1, bars.length - 1)].time,
+        dist: Math.abs(px - (bd.lo + bd.hi) / 2),
+        sweepP: sw.price
+      });
+      break;
+    }
+  });
+
+  out.sort(function(a, b) { return a.dist - b.dist; });
+  if (out.length > 2) out = out.slice(0, 2);
+  return out;
+}
+
+function drawOBOverlays() {
+  if (!(document.getElementById('obOn') || {}).checked) return;
+  if (!history || history.length < 20) return;
+  let obs = detectHQOrderBlocks(history);
+  let lastT = history[history.length - 1].time;
+  obs.forEach(function(o) {
+    let col = o.type === 'bull' ? '#26a69a' : '#ef5350';
+    let tag = o.type === 'bull' ? 'OB+' : 'OB-';
+    // body box: high/low segments from OB candle toward now (open zone)
+    let tStart = o.t0;
+    let tEnd = lastT;
+    try {
+      let sHi = makeLine(col, tag + ' ' + o.lo.toFixed(0) + '-' + o.hi.toFixed(0), 0, 2);
+      sHi.setData([{ time: tStart, value: o.hi }, { time: tEnd, value: o.hi }]);
+      sHi.__group = 'ob';
+      levelSeries.push(sHi);
+      let sLo = makeLine(col, '', 0, 2);
+      sLo.setData([{ time: tStart, value: o.lo }, { time: tEnd, value: o.lo }]);
+      sLo.__group = 'ob';
+      levelSeries.push(sLo);
+    } catch (e) {
+      addLevel(o.mid, col, tag, 'ob', 0, 2);
+    }
+  });
+}
+
 function recalcOverlays() {
   if (!history.length || !dv) return;
   dv.setData(vwap('d'));
@@ -1291,6 +1445,7 @@ function recalcOverlays() {
     window._lastTop3 = [];
   }
   drawFVGOverlays();
+  drawOBOverlays();
 }
 
 
@@ -1452,7 +1607,7 @@ function onOverlayToggle() {
   saveSettings();
 }
 
-['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'toSumUpOn', 'fvgOn', 'bucket', 'showTable'].forEach(id => {
+['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'toSumUpOn', 'fvgOn', 'obOn', 'bucket', 'showTable'].forEach(id => {
   document.getElementById(id).addEventListener('change', onOverlayToggle);
 });
 document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', onOverlayToggle));
@@ -1647,6 +1802,7 @@ function saveSettings() {
       toTop3On: !!(document.getElementById('toTop3On') || {}).checked,
       toSumUpOn: !!(document.getElementById('toSumUpOn') || {}).checked,
       fvgOn: !!(document.getElementById('fvgOn') || {}).checked,
+      obOn: !!(document.getElementById('obOn') || {}).checked,
       toTicksOn: !!(document.getElementById('toTicksOn') || {}).checked,
       showTable: !!(document.getElementById('showTable') || {}).checked,
       bucket: (document.getElementById('bucket') || {}).value || '5',
@@ -1679,6 +1835,7 @@ function loadSettings() {
     setChk('toTop3On', o.toTop3On);
     setChk('toSumUpOn', o.toSumUpOn);
     setChk('fvgOn', o.fvgOn);
+    setChk('obOn', o.obOn);
     setChk('toTicksOn', o.toTicksOn);
     setChk('showTable', o.showTable);
     if (o.bucket && document.getElementById('bucket')) document.getElementById('bucket').value = o.bucket;
