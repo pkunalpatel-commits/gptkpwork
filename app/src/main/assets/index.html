@@ -297,6 +297,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 <script>
 let chart, candles, dv, wv, chain = null, selected = null;
 let history = [], lastOi = null, lastLtp = null, profileSamples = [];
+let oiSeries = [];
 let fullHistory = [], fullProfileSamples = [];
 let replayMode = false, replayPlaying = false, replayTimer = null, replayIdx = 0;
 
@@ -776,6 +777,7 @@ function startContract() {
   lastOi = null;
   lastLtp = chainLtp > 0 ? chainLtp : null;
   profileSamples = [];
+  oiSeries = [];
   if (chainOi > 0 && lastLtp > 0) {
     let doi = prevOi > 0 ? (chainOi - prevOi) : 0;
     profileSamples.push({ price: lastLtp, oi: chainOi, doi: doi, time: Date.now(), src: 'chain' });
@@ -796,24 +798,19 @@ function startContract() {
 function disconnect() { DhanBridge.disconnect(); }
 
 function seedProfileFromHistory() {
-  let histSamples = [];
-  let prev = null;
-  let withOi = 0;
-  history.forEach(c => {
+  // Rebuild oiSeries hist points from candles; keep existing live points
+  let liveKeep = (oiSeries || []).filter(function(p) { return p.src === 'live' || p.src === 'close'; });
+  oiSeries = [];
+  history.forEach(function(c) {
     if (!(c.oi > 0) || !(c.close > 0)) return;
-    withOi++;
-    let doi = prev === null ? 0 : (c.oi - prev);
-    histSamples.push({ price: c.close, oi: c.oi, doi: doi, time: c.time * 1000, src: 'hist' });
-    prev = c.oi;
+    oiSeries.push({ t: c.time * 1000, oi: Number(c.oi), ltp: Number(c.close), src: 'hist' });
   });
-  let liveOnly = profileSamples.filter(s => s.src === 'live' || s.src === 'chain');
-  profileSamples = histSamples.concat(liveOnly);
-  if (prev !== null) lastOi = prev;
+  oiSeries = oiSeries.concat(liveKeep);
+  let n = rebuildProfileFromOiSeries(null);
   if (history.length && history[history.length - 1].close > 0)
     lastLtp = history[history.length - 1].close;
-  return withOi;
+  return n;
 }
-
 
 function aggregateBars(bars, intervalMin) {
   if (!bars || !bars.length || !intervalMin || intervalMin <= 60) return bars;
@@ -877,6 +874,51 @@ window.onCandlesResponse = (ok, text) => {
   } catch (e) { setStatus('Candle parse: ' + e, false); }
 };
 
+
+/** P1: single OI series → profile samples (correct doi chain) */
+function rebuildProfileFromOiSeries(cutT) {
+  let series = (oiSeries || []).slice();
+  series.sort(function(a, b) { return a.t - b.t; });
+  // dedupe same second: prefer live over hist
+  let deduped = [];
+  series.forEach(function(p) {
+    if (!deduped.length) { deduped.push(p); return; }
+    let last = deduped[deduped.length - 1];
+    if (Math.abs(p.t - last.t) < 500 && p.oi === last.oi) {
+      if (p.src === 'live' && last.src !== 'live') deduped[deduped.length - 1] = p;
+      return;
+    }
+    if (Math.abs(p.t - last.t) < 500) {
+      // same time, different oi — keep later src preference live
+      if (p.src === 'live') deduped[deduped.length - 1] = p;
+      else if (last.src !== 'live') deduped[deduped.length - 1] = p;
+      return;
+    }
+    deduped.push(p);
+  });
+  if (cutT != null && isFinite(cutT)) {
+    deduped = deduped.filter(function(p) { return p.t <= cutT; });
+  }
+  let samples = [];
+  let prevOi = null;
+  deduped.forEach(function(p) {
+    let doi = prevOi === null ? 0 : (p.oi - prevOi);
+    samples.push({ price: p.ltp, oi: p.oi, doi: doi, time: p.t, src: p.src });
+    prevOi = p.oi;
+  });
+  profileSamples = samples;
+  if (prevOi !== null) lastOi = prevOi;
+  return samples.length;
+}
+
+function appendOiSeries(t, oi, ltp, src) {
+  if (!isFinite(oi) || oi < 0) return;
+  if (!isFinite(ltp) || ltp <= 0) return;
+  if (!isFinite(t)) t = sampleTimeMs();
+  oiSeries.push({ t: t, oi: Number(oi), ltp: Number(ltp), src: src || 'live' });
+  if (oiSeries.length > 25000) oiSeries = oiSeries.slice(-20000);
+}
+
 function sampleTimeMs() {
   // Align live OI samples to last candle time so replay cut matches live
   if (history && history.length && history[history.length - 1].time) {
@@ -937,12 +979,11 @@ window.onDhanTick = t => {
     if (price && price > 0) {
       let doi = lastOi === null ? 0 : (oi - lastOi);
       let stm = sampleTimeMs();
-      profileSamples.push({ price: price, oi: oi, doi: doi, time: stm, src: 'live' });
       if (!replayMode) {
-        fullProfileSamples.push({ price: price, oi: oi, doi: doi, time: stm, src: 'live' });
-        if (fullProfileSamples.length > 20000) fullProfileSamples.shift();
+        appendOiSeries(stm, oi, price, 'live');
+        rebuildProfileFromOiSeries(null);
+        fullProfileSamples = profileSamples.map(function(s) { return Object.assign({}, s); });
       }
-      if (profileSamples.length > 20000) profileSamples.shift();
       if (history.length) history[history.length - 1].oi = oi;
     }
     lastOi = oi;
@@ -1724,13 +1765,13 @@ function applyReplayAt(idx) {
   if (sl) sl.value = idx;
   history = fullHistory.slice(0, idx + 1).map(c => Object.assign({}, c));
   let cutT = fullHistory[idx].time * 1000;
-  let base = fullProfileSamples.length ? fullProfileSamples : profileSamples;
-  // At last candle: use full profile (matches live); else time-cut
+  // P1: replay cuts the same oiSeries (Live @ last === full series)
   if (idx >= fullHistory.length - 1) {
-    profileSamples = base.map(s => Object.assign({}, s));
+    rebuildProfileFromOiSeries(null);
   } else {
-    profileSamples = base.filter(s => (Number(s.time) || 0) <= cutT).map(s => Object.assign({}, s));
+    rebuildProfileFromOiSeries(cutT);
   }
+  fullProfileSamples = profileSamples.map(function(s) { return Object.assign({}, s); });
   if (candles) candles.setData(history);
   if (history.length) {
     lastLtp = history[history.length - 1].close;
@@ -1803,7 +1844,8 @@ function exitReplay() {
   replayMode = false;
   if (fullHistory.length) {
     history = fullHistory.map(c => Object.assign({}, c));
-    profileSamples = fullProfileSamples.map(s => Object.assign({}, s));
+    rebuildProfileFromOiSeries(null);
+    fullProfileSamples = profileSamples.map(function(s) { return Object.assign({}, s); });
     if (candles) candles.setData(history);
     setupReplaySlider();
     recalcOverlays();
