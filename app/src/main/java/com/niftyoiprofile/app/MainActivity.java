@@ -705,8 +705,20 @@ public class MainActivity extends Activity {
                 volume = b.getInt(22) & 0xffffffffL;
                 oi = b.getInt(34) & 0xffffffffL; // fixed: was 35
             } else if (code == 6 && packet.length >= 16) {
-                // prev close packet may carry prev OI at offset 12
-                oi = b.getInt(12) & 0xffffffffL;
+                // Dhan code 6 = Prev Close: prev close price @8, PREV-DAY OI @12
+                // Must NOT treat as live OI (corrupts ΔOI profile vs hist/replay)
+                double prevClose = Double.NaN;
+                long prevOi = b.getInt(12) & 0xffffffffL;
+                // prev close may be float or scaled int depending on feed; try float at 8
+                try { prevClose = b.getFloat(8); } catch (Exception ignored) {}
+                JSONObject prev = new JSONObject();
+                prev.put("code", 6);
+                prev.put("securityId", sid);
+                prev.put("prevOi", prevOi);
+                if (!Double.isNaN(prevClose)) prev.put("prevClose", prevClose);
+                js("window.onDhanPrevClose && window.onDhanPrevClose(" + prev.toString() + ")");
+                // do not fall through to live oi path
+                return;
             }
 
             if (!Double.isNaN(ltp) || !Double.isNaN(oi)) {

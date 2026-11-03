@@ -877,9 +877,27 @@ window.onCandlesResponse = (ok, text) => {
   } catch (e) { setStatus('Candle parse: ' + e, false); }
 };
 
+function sampleTimeMs() {
+  // Align live OI samples to last candle time so replay cut matches live
+  if (history && history.length && history[history.length - 1].time) {
+    return Number(history[history.length - 1].time) * 1000;
+  }
+  return Date.now();
+}
+
+window.onDhanPrevClose = function(p) {
+  // Reference only — previous day OI/close; do not add to profile bins
+  try {
+    if (p && p.prevOi != null) {
+      window._prevDayOi = Number(p.prevOi);
+      appLog('PrevDay OI ' + window._prevDayOi + ' (not live)');
+    }
+  } catch (e) {}
+};
+
 window.onDhanTick = t => {
   if (!selected) return;
-  if (replayMode && replayPlaying) return; // ignore live while playing replay
+  if (replayMode) return; // ignore live ticks while in replay (avoid mix)
   // BUGFIX: multi-instrument watch scan shares one WebSocket.
   // Only the *selected* contract may update chart / OI profile / lastOi.
   // Other watchlist ticks are handled in native checkWatchCross only.
@@ -918,9 +936,10 @@ window.onDhanTick = t => {
     let price = (t.ltp !== undefined && isFinite(t.ltp)) ? Number(t.ltp) : lastLtp;
     if (price && price > 0) {
       let doi = lastOi === null ? 0 : (oi - lastOi);
-      profileSamples.push({ price: price, oi: oi, doi: doi, time: Date.now(), src: 'live' });
+      let stm = sampleTimeMs();
+      profileSamples.push({ price: price, oi: oi, doi: doi, time: stm, src: 'live' });
       if (!replayMode) {
-        fullProfileSamples.push({ price: price, oi: oi, doi: doi, time: Date.now(), src: 'live' });
+        fullProfileSamples.push({ price: price, oi: oi, doi: doi, time: stm, src: 'live' });
         if (fullProfileSamples.length > 20000) fullProfileSamples.shift();
       }
       if (profileSamples.length > 20000) profileSamples.shift();
@@ -1705,9 +1724,13 @@ function applyReplayAt(idx) {
   if (sl) sl.value = idx;
   history = fullHistory.slice(0, idx + 1).map(c => Object.assign({}, c));
   let cutT = fullHistory[idx].time * 1000;
-  // rebuild OI samples up to this time (hist + any live samples before cut)
   let base = fullProfileSamples.length ? fullProfileSamples : profileSamples;
-  profileSamples = base.filter(s => (Number(s.time) || 0) <= cutT).map(s => Object.assign({}, s));
+  // At last candle: use full profile (matches live); else time-cut
+  if (idx >= fullHistory.length - 1) {
+    profileSamples = base.map(s => Object.assign({}, s));
+  } else {
+    profileSamples = base.filter(s => (Number(s.time) || 0) <= cutT).map(s => Object.assign({}, s));
+  }
   if (candles) candles.setData(history);
   if (history.length) {
     lastLtp = history[history.length - 1].close;
