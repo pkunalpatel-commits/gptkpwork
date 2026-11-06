@@ -861,15 +861,20 @@ window.onCandlesResponse = (ok, text) => {
     }
     resizeChart();
     candles.setData(history);
+    try { candles.setMarkers([]); } catch (e0) {}
     fullHistory = history.map(c => Object.assign({}, c));
-    // fullProfileSamples filled after seed
-    let nOi = seedProfileFromHistory();
-    fullProfileSamples = profileSamples.map(s => Object.assign({}, s));
-    setupReplaySlider();
-    recalcOverlays();
-    chart.timeScale().fitContent();
-    setTimeout(() => { resizeChart(); chart.timeScale().fitContent(); drawProfile(); }, 100);
-    drawProfile();
+    let nOi = 0;
+    try {
+      nOi = seedProfileFromHistory();
+      fullProfileSamples = profileSamples.map(s => Object.assign({}, s));
+    } catch (eSeed) { appLog('seed OI: ' + eSeed); }
+    try { setupReplaySlider(); } catch (e1) {}
+    try { recalcOverlays(); } catch (e2) { appLog('overlays: ' + e2); }
+    try { chart.timeScale().fitContent(); } catch (e3) {}
+    setTimeout(function() {
+      try { resizeChart(); chart.timeScale().fitContent(); drawProfile(); } catch (e4) {}
+    }, 100);
+    try { drawProfile(); } catch (e5) {}
     if (nOi > 1) setStatus('Candles ' + history.length + ' · hist OI ' + nOi + ' · levels ready', true);
     else setStatus('Candles ' + history.length + ' · levels from available data', true);
   } catch (e) { setStatus('Candle parse: ' + e, false); }
@@ -1425,153 +1430,161 @@ function drawOBOverlays() {
 }
 
 
+
 /** Collect active levels for retest: TO1-3, PDH/PDL/PDC, FVG, OB, dVWAP, wVWAP */
 function collectRetestLevels() {
   let levels = [];
-  let atr = computeATR(history, 14) || 1;
+  try {
+    let atr = computeATR(history, 14) || 1;
 
-  // TO1-3 from last top3
-  if (window._lastTop3 && window._lastTop3.length) {
-    let bucket = Number((document.getElementById('bucket') || {}).value) || 5;
-    window._lastTop3.forEach(function(p, i) {
-      let mid = Number(p) + bucket / 2;
-      if (isFinite(mid)) levels.push({ id: 'TO' + (i + 1), price: mid, lo: Number(p), hi: Number(p) + bucket });
-    });
+    if (window._lastTop3 && window._lastTop3.length) {
+      let bucket = Number((document.getElementById('bucket') || {}).value) || 5;
+      window._lastTop3.forEach(function(p, i) {
+        let mid = Number(p) + bucket / 2;
+        if (isFinite(mid)) levels.push({ id: 'TO' + (i + 1), price: mid, lo: Number(p), hi: Number(p) + bucket });
+      });
+    }
+
+    try {
+      let pd = computePrevDayOHLC && computePrevDayOHLC();
+      if (pd) {
+        if (isFinite(pd.h)) levels.push({ id: 'PDH', price: pd.h });
+        if (isFinite(pd.l)) levels.push({ id: 'PDL', price: pd.l });
+        if (isFinite(pd.c)) levels.push({ id: 'PDC', price: pd.c });
+      }
+    } catch (e1) {}
+
+    try {
+      if ((document.getElementById('fvgOn') || {}).checked && typeof detectOpenFVGs === 'function') {
+        detectOpenFVGs(history).forEach(function(f, i) {
+          levels.push({ id: 'FVG' + (f.type === 'bull' ? '+' : '-') + (i + 1), price: f.mid, lo: f.low, hi: f.high });
+        });
+      }
+    } catch (e2) {}
+
+    try {
+      if ((document.getElementById('obOn') || {}).checked && typeof detectHQOrderBlocks === 'function') {
+        detectHQOrderBlocks(history).forEach(function(o) {
+          levels.push({ id: 'OB' + (o.type === 'bull' ? '+' : '-'), price: o.mid, lo: o.lo, hi: o.hi });
+        });
+      }
+    } catch (e3) {}
+
+    try {
+      let dvData = vwap('d');
+      if (dvData && dvData.length) {
+        let v = dvData[dvData.length - 1].value;
+        if (isFinite(v)) levels.push({ id: 'dVWAP', price: v });
+      }
+    } catch (e4) {}
+
+    try {
+      let wvData = vwap('w');
+      if (wvData && wvData.length) {
+        let v = wvData[wvData.length - 1].value;
+        if (isFinite(v)) levels.push({ id: 'wVWAP', price: v });
+      }
+    } catch (e5) {}
+
+    return { levels: levels, atr: atr };
+  } catch (e) {
+    return { levels: [], atr: 1 };
   }
-
-  // Prev day OHLC
-  try {
-    let pd = computePrevDayOHLC && computePrevDayOHLC();
-    if (pd) {
-      if (isFinite(pd.h)) levels.push({ id: 'PDH', price: pd.h });
-      if (isFinite(pd.l)) levels.push({ id: 'PDL', price: pd.l });
-      if (isFinite(pd.c)) levels.push({ id: 'PDC', price: pd.c });
-    }
-  } catch (e) {}
-
-  // HQ FVG mids (reuse detector)
-  try {
-    if ((document.getElementById('fvgOn') || {}).checked) {
-      detectOpenFVGs(history).forEach(function(f, i) {
-        levels.push({ id: 'FVG' + (f.type === 'bull' ? '+' : '-') + (i + 1), price: f.mid, lo: f.low, hi: f.high });
-      });
-    }
-  } catch (e) {}
-
-  // HQ OB
-  try {
-    if ((document.getElementById('obOn') || {}).checked) {
-      detectHQOrderBlocks(history).forEach(function(o, i) {
-        levels.push({ id: 'OB' + (o.type === 'bull' ? '+' : '-'), price: o.mid, lo: o.lo, hi: o.hi });
-      });
-    }
-  } catch (e) {}
-
-  // Session (daily) VWAP last value
-  try {
-    let dvData = vwap('d');
-    if (dvData && dvData.length) {
-      let v = dvData[dvData.length - 1].value;
-      if (isFinite(v)) levels.push({ id: 'dVWAP', price: v });
-    }
-  } catch (e) {}
-
-  // Weekly VWAP last value
-  try {
-    let wvData = vwap('w');
-    if (wvData && wvData.length) {
-      let v = wvData[wvData.length - 1].value;
-      if (isFinite(v)) levels.push({ id: 'wVWAP', price: v });
-    }
-  } catch (e) {}
-
-  return { levels: levels, atr: atr };
 }
 
 /**
- * Retest arrows: break away ≥0.35 ATR, then touch within 20 bars, hold/fail
+ * Retest arrows — safe for lightweight-charts (unique sorted times only)
  */
 function detectRetests() {
   let markers = [];
-  if (!(document.getElementById('retestOn') || {}).checked) return markers;
-  if (!history || history.length < 15) return markers;
-  let pack = collectRetestLevels();
-  let levels = pack.levels;
-  let atr = pack.atr;
-  if (!levels.length || !(atr > 0)) return markers;
+  try {
+    if (!(document.getElementById('retestOn') || {}).checked) return markers;
+    if (!history || history.length < 15) return markers;
+    let pack = collectRetestLevels();
+    let levels = pack.levels;
+    let atr = pack.atr;
+    if (!levels.length || !(atr > 0)) return markers;
 
-  let minAway = Math.max(atr * 0.35, 0.5);
-  let tol = Math.max(atr * 0.15, 0.25);
-  let maxWait = 20;
-  let seen = {}; // one arrow per level id (latest)
+    let minAway = Math.max(atr * 0.35, 0.5);
+    let tol = Math.max(atr * 0.15, 0.25);
+    let maxWait = 20;
+    let timeSet = {};
+    history.forEach(function(c) { timeSet[c.time] = true; });
 
-  levels.forEach(function(lv) {
-    let L = lv.price;
-    let lo = lv.lo != null ? lv.lo : L - tol;
-    let hi = lv.hi != null ? lv.hi : L + tol;
-    let state = 'none'; // none | wait_bull | wait_bear
-    let breakIdx = -1;
+    levels.forEach(function(lv) {
+      let L = lv.price;
+      if (!isFinite(L)) return;
+      let lo = lv.lo != null && isFinite(lv.lo) ? lv.lo : L - tol;
+      let hi = lv.hi != null && isFinite(lv.hi) ? lv.hi : L + tol;
+      let state = 'none';
+      let breakIdx = -1;
 
-    for (let i = 5; i < history.length; i++) {
-      let c = history[i];
-      let mid = (c.high + c.low) / 2;
-
-      if (state === 'none') {
-        // break above
-        if (c.close > hi + minAway * 0.5 && c.low > L) {
-          state = 'wait_bull'; // expect retest from above (support)
-          breakIdx = i;
-        } else if (c.close < lo - minAway * 0.5 && c.high < L) {
-          state = 'wait_bear'; // expect retest from below (resistance)
-          breakIdx = i;
+      for (let i = 5; i < history.length; i++) {
+        let c = history[i];
+        if (state === 'none') {
+          if (c.close > hi + minAway * 0.5 && c.low > L) {
+            state = 'wait_bull';
+            breakIdx = i;
+          } else if (c.close < lo - minAway * 0.5 && c.high < L) {
+            state = 'wait_bear';
+            breakIdx = i;
+          }
+          continue;
         }
-        continue;
+        if (i - breakIdx > maxWait) { state = 'none'; continue; }
+        let touched = (c.low <= hi && c.high >= lo);
+        if (!touched) continue;
+
+        if (state === 'wait_bull') {
+          let hold = c.close >= lo - tol * 0.25;
+          markers.push({
+            time: c.time,
+            position: hold ? 'belowBar' : 'aboveBar',
+            color: hold ? '#26a69a' : '#ef5350',
+            shape: hold ? 'arrowUp' : 'arrowDown',
+            text: (hold ? 'RT+ ' : 'RTx ') + lv.id
+          });
+          state = 'none';
+        } else if (state === 'wait_bear') {
+          let hold = c.close <= hi + tol * 0.25;
+          markers.push({
+            time: c.time,
+            position: hold ? 'aboveBar' : 'belowBar',
+            color: hold ? '#ef5350' : '#26a69a',
+            shape: hold ? 'arrowDown' : 'arrowUp',
+            text: (hold ? 'RT+ ' : 'RTx ') + lv.id
+          });
+          state = 'none';
+        }
       }
+    });
 
-      if (i - breakIdx > maxWait) {
-        state = 'none';
-        continue;
-      }
-
-      let touched = (c.low <= hi && c.high >= lo);
-      if (!touched) continue;
-
-      if (state === 'wait_bull') {
-        let hold = c.close >= lo - tol * 0.25;
-        markers.push({
-          time: c.time,
-          position: hold ? 'belowBar' : 'aboveBar',
-          color: hold ? '#26a69a' : '#ef5350',
-          shape: hold ? 'arrowUp' : 'arrowDown',
-          text: (hold ? 'RT+ ' : 'RTx ') + lv.id
-        });
-        seen[lv.id] = true;
-        state = 'none';
-      } else if (state === 'wait_bear') {
-        let hold = c.close <= hi + tol * 0.25;
-        markers.push({
-          time: c.time,
-          position: hold ? 'aboveBar' : 'belowBar',
-          color: hold ? '#ef5350' : '#26a69a',
-          shape: hold ? 'arrowDown' : 'arrowUp',
-          text: (hold ? 'RT+ ' : 'RTx ') + lv.id
-        });
-        seen[lv.id] = true;
-        state = 'none';
-      }
-    }
-  });
-
-  // keep last ~12 markers to avoid clutter
-  if (markers.length > 12) markers = markers.slice(markers.length - 12);
-  markers.sort(function(a, b) { return a.time - b.time; });
-  return markers;
+    // LWC requires ascending unique times — keep one marker per time
+    markers = markers.filter(function(m) { return m.time && timeSet[m.time]; });
+    markers.sort(function(a, b) { return a.time - b.time; });
+    let uniq = [];
+    let lastT = null;
+    markers.forEach(function(m) {
+      if (m.time === lastT) return;
+      uniq.push(m);
+      lastT = m.time;
+    });
+    if (uniq.length > 12) uniq = uniq.slice(uniq.length - 12);
+    return uniq;
+  } catch (e) {
+    return [];
+  }
 }
 
 function drawRetestMarkers() {
   if (!candles) return;
   try {
+    if (!(document.getElementById('retestOn') || {}).checked) {
+      candles.setMarkers([]);
+      return;
+    }
     let m = detectRetests();
+    if (!m) m = [];
     candles.setMarkers(m);
   } catch (e) {
     try { candles.setMarkers([]); } catch (e2) {}
@@ -1659,9 +1672,9 @@ function recalcOverlays() {
   } else {
     window._lastTop3 = [];
   }
-  drawFVGOverlays();
-  drawOBOverlays();
-  drawRetestMarkers();
+  try { drawFVGOverlays(); } catch (e) {}
+  try { drawOBOverlays(); } catch (e) {}
+  try { drawRetestMarkers(); } catch (e) {}
 }
 
 
