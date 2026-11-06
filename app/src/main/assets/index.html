@@ -1423,6 +1423,160 @@ function drawOBOverlays() {
   });
 }
 
+
+/** Collect active levels for retest: TO1-3, PDH/PDL/PDC, FVG, OB, dVWAP, wVWAP */
+function collectRetestLevels() {
+  let levels = [];
+  let atr = computeATR(history, 14) || 1;
+
+  // TO1-3 from last top3
+  if (window._lastTop3 && window._lastTop3.length) {
+    let bucket = Number((document.getElementById('bucket') || {}).value) || 5;
+    window._lastTop3.forEach(function(p, i) {
+      let mid = Number(p) + bucket / 2;
+      if (isFinite(mid)) levels.push({ id: 'TO' + (i + 1), price: mid, lo: Number(p), hi: Number(p) + bucket });
+    });
+  }
+
+  // Prev day OHLC
+  try {
+    let pd = computePrevDayOHLC && computePrevDayOHLC();
+    if (pd) {
+      if (isFinite(pd.h)) levels.push({ id: 'PDH', price: pd.h });
+      if (isFinite(pd.l)) levels.push({ id: 'PDL', price: pd.l });
+      if (isFinite(pd.c)) levels.push({ id: 'PDC', price: pd.c });
+    }
+  } catch (e) {}
+
+  // HQ FVG mids (reuse detector)
+  try {
+    if ((document.getElementById('fvgOn') || {}).checked) {
+      detectOpenFVGs(history).forEach(function(f, i) {
+        levels.push({ id: 'FVG' + (f.type === 'bull' ? '+' : '-') + (i + 1), price: f.mid, lo: f.low, hi: f.high });
+      });
+    }
+  } catch (e) {}
+
+  // HQ OB
+  try {
+    if ((document.getElementById('obOn') || {}).checked) {
+      detectHQOrderBlocks(history).forEach(function(o, i) {
+        levels.push({ id: 'OB' + (o.type === 'bull' ? '+' : '-'), price: o.mid, lo: o.lo, hi: o.hi });
+      });
+    }
+  } catch (e) {}
+
+  // Session (daily) VWAP last value
+  try {
+    let dvData = vwap('d');
+    if (dvData && dvData.length) {
+      let v = dvData[dvData.length - 1].value;
+      if (isFinite(v)) levels.push({ id: 'dVWAP', price: v });
+    }
+  } catch (e) {}
+
+  // Weekly VWAP last value
+  try {
+    let wvData = vwap('w');
+    if (wvData && wvData.length) {
+      let v = wvData[wvData.length - 1].value;
+      if (isFinite(v)) levels.push({ id: 'wVWAP', price: v });
+    }
+  } catch (e) {}
+
+  return { levels: levels, atr: atr };
+}
+
+/**
+ * Retest arrows: break away ≥0.35 ATR, then touch within 20 bars, hold/fail
+ */
+function detectRetests() {
+  let markers = [];
+  if (!(document.getElementById('retestOn') || {}).checked) return markers;
+  if (!history || history.length < 15) return markers;
+  let pack = collectRetestLevels();
+  let levels = pack.levels;
+  let atr = pack.atr;
+  if (!levels.length || !(atr > 0)) return markers;
+
+  let minAway = Math.max(atr * 0.35, 0.5);
+  let tol = Math.max(atr * 0.15, 0.25);
+  let maxWait = 20;
+  let seen = {}; // one arrow per level id (latest)
+
+  levels.forEach(function(lv) {
+    let L = lv.price;
+    let lo = lv.lo != null ? lv.lo : L - tol;
+    let hi = lv.hi != null ? lv.hi : L + tol;
+    let state = 'none'; // none | wait_bull | wait_bear
+    let breakIdx = -1;
+
+    for (let i = 5; i < history.length; i++) {
+      let c = history[i];
+      let mid = (c.high + c.low) / 2;
+
+      if (state === 'none') {
+        // break above
+        if (c.close > hi + minAway * 0.5 && c.low > L) {
+          state = 'wait_bull'; // expect retest from above (support)
+          breakIdx = i;
+        } else if (c.close < lo - minAway * 0.5 && c.high < L) {
+          state = 'wait_bear'; // expect retest from below (resistance)
+          breakIdx = i;
+        }
+        continue;
+      }
+
+      if (i - breakIdx > maxWait) {
+        state = 'none';
+        continue;
+      }
+
+      let touched = (c.low <= hi && c.high >= lo);
+      if (!touched) continue;
+
+      if (state === 'wait_bull') {
+        let hold = c.close >= lo - tol * 0.25;
+        markers.push({
+          time: c.time,
+          position: hold ? 'belowBar' : 'aboveBar',
+          color: hold ? '#26a69a' : '#ef5350',
+          shape: hold ? 'arrowUp' : 'arrowDown',
+          text: (hold ? 'RT+ ' : 'RTx ') + lv.id
+        });
+        seen[lv.id] = true;
+        state = 'none';
+      } else if (state === 'wait_bear') {
+        let hold = c.close <= hi + tol * 0.25;
+        markers.push({
+          time: c.time,
+          position: hold ? 'aboveBar' : 'belowBar',
+          color: hold ? '#ef5350' : '#26a69a',
+          shape: hold ? 'arrowDown' : 'arrowUp',
+          text: (hold ? 'RT+ ' : 'RTx ') + lv.id
+        });
+        seen[lv.id] = true;
+        state = 'none';
+      }
+    }
+  });
+
+  // keep last ~12 markers to avoid clutter
+  if (markers.length > 12) markers = markers.slice(markers.length - 12);
+  markers.sort(function(a, b) { return a.time - b.time; });
+  return markers;
+}
+
+function drawRetestMarkers() {
+  if (!candles) return;
+  try {
+    let m = detectRetests();
+    candles.setMarkers(m);
+  } catch (e) {
+    try { candles.setMarkers([]); } catch (e2) {}
+  }
+}
+
 function recalcOverlays() {
   if (!history.length || !dv) return;
   dv.setData(vwap('d'));
@@ -1506,6 +1660,7 @@ function recalcOverlays() {
   }
   drawFVGOverlays();
   drawOBOverlays();
+  drawRetestMarkers();
 }
 
 
@@ -1667,7 +1822,7 @@ function onOverlayToggle() {
   saveSettings();
 }
 
-['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'toSumUpOn', 'fvgOn', 'obOn', 'bucket', 'showTable'].forEach(id => {
+['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'toSumUpOn', 'fvgOn', 'obOn', 'retestOn', 'bucket', 'showTable'].forEach(id => {
   document.getElementById(id).addEventListener('change', onOverlayToggle);
 });
 document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', onOverlayToggle));
@@ -1868,6 +2023,7 @@ function saveSettings() {
       toSumUpOn: !!(document.getElementById('toSumUpOn') || {}).checked,
       fvgOn: !!(document.getElementById('fvgOn') || {}).checked,
       obOn: !!(document.getElementById('obOn') || {}).checked,
+      retestOn: !!(document.getElementById('retestOn') || {}).checked,
       toTicksOn: !!(document.getElementById('toTicksOn') || {}).checked,
       showTable: !!(document.getElementById('showTable') || {}).checked,
       bucket: (document.getElementById('bucket') || {}).value || '5',
@@ -1901,6 +2057,7 @@ function loadSettings() {
     setChk('toSumUpOn', o.toSumUpOn);
     setChk('fvgOn', o.fvgOn);
     setChk('obOn', o.obOn);
+    setChk('retestOn', o.retestOn);
     setChk('toTicksOn', o.toTicksOn);
     setChk('showTable', o.showTable);
     if (o.bucket && document.getElementById('bucket')) document.getElementById('bucket').value = o.bucket;
