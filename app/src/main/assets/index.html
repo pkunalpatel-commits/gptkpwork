@@ -298,6 +298,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
 let chart, candles, dv, wv, chain = null, selected = null;
 let history = [], lastOi = null, lastLtp = null, profileSamples = [];
 let oiSeries = [];
+let chainSpot = null;
 let fullHistory = [], fullProfileSamples = [];
 let replayMode = false, replayPlaying = false, replayTimer = null, replayIdx = 0;
 
@@ -2115,7 +2116,6 @@ let appLogLines = [];
 let levelRefreshTimer = null;
 let bulkQueue = [];
 let bulkRunning = false;
-let chainSpot = null;
 let tickedExpiries = {};
 
 function appLog(msg) {
