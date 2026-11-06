@@ -200,6 +200,7 @@ tr.poc td:nth-child(2){color:var(--green);font-weight:700}
   <label class="sw"><input id="toSumUpOn" type="checkbox">TO from Σ+ΔOI only</label>
   <label class="sw"><input id="fvgOn" type="checkbox" checked>HQ open FVG (low noise)</label>
   <label class="sw"><input id="obOn" type="checkbox" checked>HQ OB + sweep (max 2)</label>
+  <label class="sw"><input id="retestOn" type="checkbox">Retest arrows</label>
 </div>
 <div class="swrow">
   <label class="sw"><input type="radio" name="metric" value="doi" checked>OI generated (±)</label>
@@ -1836,8 +1837,9 @@ function onOverlayToggle() {
   saveSettings();
 }
 
-['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'toSumUpOn', 'fvgOn', 'obOn', 'retestOn', 'bucket', 'showTable'].forEach(id => {
-  document.getElementById(id).addEventListener('change', onOverlayToggle);
+['dailyOn', 'weeklyOn', 'pdOn', 'ibOn', 'pocOn', 'toTop3On', 'toTicksOn', 'toSumUpOn', 'fvgOn', 'obOn', 'retestOn', 'bucket', 'showTable'].forEach(function(id) {
+  let el = document.getElementById(id);
+  if (el) el.addEventListener('change', onOverlayToggle);
 });
 document.querySelectorAll('input[name=metric]').forEach(x => x.addEventListener('change', onOverlayToggle));
 
